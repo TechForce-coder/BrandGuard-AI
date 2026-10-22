@@ -1,0 +1,8 @@
+import { useEffect, useState } from 'react';
+import { BookOpen, ShieldCheck } from 'lucide-react';
+import { api } from '../api/api.js';
+export default function Rulebook() {
+  const [rules,setRules]=useState([]);const [error,setError]=useState('');
+  useEffect(()=>{api.getRulebook().then(r=>setRules(Array.isArray(r)?r:r?.rules||[])).catch(e=>setError(e.message));},[]);
+  return <div className="space-y-6"><div><p className="text-sm font-semibold text-emerald-700">Governance</p><h1 className="mt-1 text-3xl font-bold">Guideline Library</h1><p className="mt-2 text-sm text-slate-500">Reference policies used when reviewing brand content.</p></div>{error&&<p role="alert" className="text-sm text-rose-700">{error}</p>}<div className="grid gap-4 md:grid-cols-2">{rules.map((r,i)=><article key={r.id||i} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start gap-3"><span className="rounded-xl bg-emerald-50 p-3 text-emerald-700"><BookOpen size={20}/></span><div><p className="text-xs font-semibold text-emerald-700">{r.id||`RULE-${i+1}`}</p><h2 className="mt-1 font-bold">{r.title||r.name}</h2><p className="mt-2 text-sm leading-6 text-slate-600">{r.description||r.text}</p></div></div></article>)}</div>{!rules.length&&!error&&<p className="rounded-xl border bg-white p-6 text-sm text-slate-500">Loading rules…</p>}<p className="flex items-center gap-2 text-xs text-slate-400"><ShieldCheck size={15}/> Changes to authoritative rules should be managed through an authorized backend workflow.</p></div>;
+}

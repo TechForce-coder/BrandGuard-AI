@@ -1,0 +1,14 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ClipboardCheck, Search } from 'lucide-react';
+import { api } from '../api/api.js';
+import StatusBadge from '../components/StatusBadge.jsx';
+export default function Review({ role }) {
+  const [drafts,setDrafts]=useState([]);const [filter,setFilter]=useState('Pending Approval');const [search,setSearch]=useState('');const [error,setError]=useState('');const navigate=useNavigate();
+  useEffect(()=>{api.getDrafts().then(setDrafts).catch(e=>setError(e.message));},[]);
+  const rows=drafts.filter(d=>(filter==='All'||d.status===filter)&&`${d.title} ${d.author} ${d.id}`.toLowerCase().includes(search.toLowerCase()));
+  return <div className="space-y-6"><div><p className="text-sm font-semibold text-emerald-700">{role} workspace</p><h1 className="mt-1 text-3xl font-bold">Review Queue</h1><p className="mt-2 text-sm text-slate-500">Open an item to inspect its content and record a review decision.</p></div>{error&&<p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white"><div className="flex flex-wrap justify-between gap-3 border-b p-5"><div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16}/><input className="field !pl-9" placeholder="Search reviews" value={search} onChange={e=>setSearch(e.target.value)}/></div><div className="flex flex-wrap gap-2">{['Pending Approval','Needs Changes','Approved','All'].map(s=><button key={s} onClick={()=>setFilter(s)} className={`rounded-lg px-3 py-2 text-xs font-semibold ${filter===s?'bg-slate-900 text-white':'bg-slate-100 text-slate-600'}`}>{s}</button>)}</div></div>
+      <div className="overflow-x-auto"><table className="w-full min-w-[650px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-5 py-3">Content</th><th className="px-5 py-3">Author</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{rows.map(d=><tr key={d.id}><td className="px-5 py-4"><b>{d.title}</b><p className="mt-1 text-xs text-slate-500">#{d.id} · {d.channel}</p></td><td className="px-5 py-4">{d.author}</td><td className="px-5 py-4"><StatusBadge status={d.status}/></td><td className="px-5 py-4"><button className="btn-secondary" onClick={()=>navigate(`/drafts/${d.id}`)}>Review</button></td></tr>)}{!rows.length&&<tr><td colSpan="4" className="px-5 py-12 text-center text-slate-500"><ClipboardCheck className="mx-auto mb-2" size={25}/>No items in this queue.</td></tr>}</tbody></table></div>
+    </section></div>;
+}
