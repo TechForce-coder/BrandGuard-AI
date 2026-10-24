@@ -327,13 +327,14 @@ export default function DraftEditor({ role }) {
         </div>
       )}
 
-      <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+      <section className="surface-card space-y-5 p-5 sm:p-7">
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block text-sm font-semibold">
-            Content title
+            Content title <span className="text-rose-600" aria-hidden="true">*</span>
 
             <input
               className="field mt-2"
+              required={!readOnly}
               value={title}
               onChange={(e) => {
                 setTitle(e.target.value);
@@ -345,7 +346,7 @@ export default function DraftEditor({ role }) {
           </label>
 
           <label className="block text-sm font-semibold">
-            Channel
+            Channel <span className="text-rose-600" aria-hidden="true">*</span>
 
             <select
               className="field mt-2"
@@ -370,7 +371,7 @@ export default function DraftEditor({ role }) {
         </div>
 
         <label className="block text-sm font-semibold">
-          Draft content
+          Draft content <span className="text-rose-600" aria-hidden="true">*</span>
 
           <Editor
             value={text}
@@ -380,10 +381,13 @@ export default function DraftEditor({ role }) {
             }}
             readOnly={readOnly}
           />
+          <span className="mt-2 block text-xs font-normal text-slate-500">
+            {text.length.toLocaleString()} characters
+          </span>
         </label>
 
-        <p className="text-xs text-slate-400">
-          If you edit after scanning, scan again before submitting.
+        <p className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-3.5 py-3 text-xs leading-5 text-emerald-900">
+          If you edit after scanning, run the check again before submitting so findings match the latest saved content.
         </p>
 
         {!readOnly && (
@@ -414,7 +418,7 @@ export default function DraftEditor({ role }) {
         )}
       </section>
 
-      <section className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 sm:p-7">
+      <section className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-5 sm:p-7">
         <div>
           <h2 className="text-xl font-bold">
             Review Findings

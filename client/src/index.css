@@ -143,10 +143,20 @@ a { color: inherit; text-decoration: none; }
   .nav-pill--active::after {
     background: rgba(4, 120, 87, 0.9);
   }
+
+  .mobile-menu-enter {
+    animation: menu-enter 180ms cubic-bezier(.2,.75,.25,1) both;
+    transform-origin: top;
+  }
 }
 
 @keyframes page-enter {
   from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes menu-enter {
+  from { opacity: 0; transform: translateY(-5px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
