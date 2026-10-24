@@ -22,6 +22,7 @@ export default function DraftEditor({ role }) {
   const [channel, setChannel] = useState('Website');
   const [text, setText] = useState('');
   const [findings, setFindings] = useState([]);
+  const [status, setStatus] = useState('');
   const [scanned, setScanned] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -51,7 +52,16 @@ export default function DraftEditor({ role }) {
         setTitle(d.title || '');
         setChannel(d.channel || 'Website');
         setText(d.content || d.text || '');
-        setFindings([]);
+        setStatus(d.status || '');
+        setFindings(
+          Array.isArray(d.findings)
+            ? d.findings.map(finding => ({
+                ...finding,
+                id: finding.id || finding._id,
+                status: finding.status || 'Open'
+              }))
+            : []
+        );
         setScanned(false);
       } catch (e) {
         if (!cancelled) {
@@ -94,6 +104,7 @@ export default function DraftEditor({ role }) {
       }
 
       setDraftId(actualId);
+      setStatus(saved.status || status);
       setMessage('Draft saved.');
 
       return { ...saved, id: actualId };
@@ -210,6 +221,7 @@ export default function DraftEditor({ role }) {
     try {
       await api.submitDraft(draftId);
 
+      setStatus('Pending Approval');
       setMessage('Draft submitted for review.');
       setTimeout(() => navigate('/'), 500);
     } catch (e) {
@@ -252,6 +264,7 @@ export default function DraftEditor({ role }) {
         comment
       );
 
+      setStatus(action === 'approve' ? 'Approved' : 'Needs Changes');
       setMessage(
         action === 'approve'
           ? 'Draft approved.'
@@ -292,9 +305,7 @@ export default function DraftEditor({ role }) {
         </div>
 
         {id && (
-          <StatusBadge
-            status={readOnly ? 'Review mode' : 'Draft'}
-          />
+          <StatusBadge status={status || 'Unknown'} />
         )}
       </div>
 

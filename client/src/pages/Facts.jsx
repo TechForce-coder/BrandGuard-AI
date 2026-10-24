@@ -36,7 +36,13 @@ export default function Facts() {
       <section className="surface-card overflow-hidden">
         <div className="border-b border-slate-100 px-5 py-4 sm:px-6">
           <h2 className="text-sm font-semibold text-slate-900">Fact register</h2>
-          <p className="mt-1 text-xs text-slate-500">{loading ? 'Loading approved facts…' : `${facts.length} ${facts.length === 1 ? 'reference' : 'references'}`}</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {loading
+              ? 'Loading approved facts…'
+              : error
+                ? 'Approved facts unavailable'
+                : `${facts.length} ${facts.length === 1 ? 'reference' : 'references'}`}
+          </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[650px] text-left text-sm">
