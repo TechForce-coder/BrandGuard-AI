@@ -1,43 +1,186 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { ShieldCheck, LayoutDashboard, FileText, PlusCircle, ClipboardCheck, BookOpen, ScrollText, LogOut, Menu, X, Users, Settings, ClipboardList } from 'lucide-react';
 import { useState } from 'react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import {
+  Activity, BookOpen, ClipboardCheck, ClipboardList, FileText, LayoutDashboard,
+  LogOut, Menu, Plus, Settings, ShieldCheck, Users, X
+} from 'lucide-react';
 import { api } from '../api/api.js';
 
 const roleLinks = {
-  Creator: [{to:'/',label:'Dashboard',icon:LayoutDashboard},{to:'/drafts',label:'My Drafts',icon:FileText},{to:'/drafts/new',label:'Submit Content',icon:PlusCircle}],
-  Reviewer: [{to:'/',label:'Dashboard',icon:LayoutDashboard},{to:'/review',label:'Review Queue',icon:ClipboardCheck},{to:'/drafts',label:'Submitted Content',icon:FileText}],
-  Manager: [{to:'/',label:'Dashboard',icon:LayoutDashboard},{to:'/review',label:'Approval Workflow',icon:ClipboardCheck},{to:'/rulebook',label:'Guideline Library',icon:BookOpen},{to:'/facts',label:'Facts',icon:ScrollText},{to:'/audit',label:'Privacy & Audit Log',icon:ClipboardList}],
-  Admin: [{to:'/',label:'Dashboard',icon:LayoutDashboard},{to:'/drafts',label:'Content',icon:FileText},{to:'/audit',label:'Audit Log',icon:ClipboardList},{to:'/settings',label:'Administration',icon:Settings}]
+  Creator: [
+    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/drafts', label: 'My Drafts', icon: FileText },
+    { to: '/drafts/new', label: 'Submit Content', icon: Plus }
+  ],
+  Reviewer: [
+    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/review', label: 'Review Queue', icon: ClipboardCheck },
+    { to: '/drafts', label: 'Submitted Content', icon: FileText }
+  ],
+  Manager: [
+    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/review', label: 'Approval Workflow', icon: ClipboardCheck },
+    { to: '/rulebook', label: 'Guideline Library', icon: BookOpen },
+    { to: '/facts', label: 'Facts', icon: FileText },
+    { to: '/audit', label: 'Privacy & Audit Log', icon: ClipboardList }
+  ],
+  Admin: [
+    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/drafts', label: 'Content', icon: FileText },
+    { to: '/audit', label: 'Audit Log', icon: ClipboardList },
+    { to: '/settings', label: 'Administration', icon: Settings }
+  ]
 };
-export default function Layout({ role, setRole, user, setUser, children }) {
-  const [mobileOpen,setMobileOpen] = useState(false);
+
+const roleDescriptions = {
+  Creator: 'Create and prepare content for review.',
+  Reviewer: 'Review submissions and record decisions.',
+  Manager: 'Oversee approvals and brand governance.',
+  Admin: 'Manage administration and workspace activity.'
+};
+
+export default function Layout({ role, setRole, user, setUser, children, previewMode = false }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
   const links = roleLinks[role] || roleLinks.Creator;
-  const logout = () => { api.logout(); setUser(null); navigate('/login'); };
-  const nav = <nav className="flex flex-col gap-1">{links.map(({to,label,icon:Icon}) => <NavLink key={to} to={to} end={to==='/'} onClick={() => setMobileOpen(false)} className={({isActive}) => `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${isActive ? 'bg-emerald-50 text-emerald-800' : 'text-slate-600 hover:bg-slate-50'}`}><Icon size={17}/>{label}</NavLink>)}</nav>;
-  return <div className="min-h-screen bg-slate-50">
-    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-        <NavLink to="/" className="flex min-w-0 items-center gap-3">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-700 text-white shadow-sm"><ShieldCheck size={25}/></span>
-          <span><span className="block text-lg font-extrabold tracking-tight text-slate-950">Brand<span className="text-emerald-700">Guard</span></span><span className="hidden text-xs text-slate-500 sm:block">V2.4 Enterprise · GreenSip Healthy Drinks Co.</span></span>
+  const showRoleSwitcher = previewMode || api.isMock;
+
+  const changeRole = nextRole => {
+    setRole(nextRole);
+    setMobileOpen(false);
+    navigate('/');
+  };
+
+  const logout = () => {
+    if (!user) return;
+    api.logout();
+    setUser(null);
+    navigate('/login');
+  };
+
+  const nav = (
+    <nav aria-label="Main navigation" className="flex min-w-max items-center gap-1.5">
+      {links.map(({ to, label, icon: Icon }) => (
+        <NavLink
+          key={to}
+          to={to}
+          end={to === '/'}
+          onClick={() => setMobileOpen(false)}
+          className={({ isActive }) => `nav-pill ${isActive ? 'nav-pill--active' : ''}`}
+        >
+          <Icon size={16} strokeWidth={1.9} aria-hidden="true" />
+          <span>{label}</span>
         </NavLink>
-        <div className="flex items-center gap-2">
-          <label className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 md:flex">Role
-            <select className="bg-transparent font-semibold text-emerald-800 outline-none" value={role} onChange={e => setRole(e.target.value)} aria-label="Preview role">
-              {['Creator','Manager','Reviewer','Admin'].map(r => <option key={r}>{r}</option>)}
-            </select>
-          </label>
-          <span className="hidden text-sm text-slate-600 lg:block">{user?.name || 'Demo User'}</span>
-          <button onClick={logout} className="btn-secondary !px-3" aria-label="Log out"><LogOut size={16}/><span className="hidden sm:inline">Logout</span></button>
-          <button onClick={() => setMobileOpen(!mobileOpen)} className="rounded-lg border p-2 md:hidden" aria-label="Toggle navigation">{mobileOpen?<X size={19}/>:<Menu size={19}/>}</button>
+      ))}
+    </nav>
+  );
+
+  return (
+    <div className="min-h-screen bg-[#f6f8f6]">
+      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 backdrop-blur-xl shadow-[0_10px_30px_rgba(15,23,42,0.02)]">
+        <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+          <NavLink to="/" aria-label="BrandGuard home" className="flex min-w-0 items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-emerald-900 text-white shadow-[0_10px_20px_rgba(16,73,46,0.25)]">
+              <ShieldCheck size={22} strokeWidth={1.8} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[17px] font-bold tracking-tight text-slate-950">
+                Brand<span className="text-emerald-800">Guard</span>
+              </span>
+              <span className="hidden text-[11px] font-medium text-slate-500 sm:block">AI brand governance</span>
+            </span>
+          </NavLink>
+
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <span className="hidden items-center gap-1.5 rounded-full border border-emerald-100 bg-emerald-50/70 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-900 lg:inline-flex">
+              <Activity size={13} aria-hidden="true" /> Enterprise
+            </span>
+            {showRoleSwitcher && (
+              <label className="hidden items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/80 px-2 py-1.5 text-xs text-emerald-900 sm:flex sm:gap-2 sm:px-3 sm:py-2">
+                <Users size={15} className="shrink-0 text-emerald-700" aria-hidden="true" />
+                <select
+                  className="max-w-[92px] bg-transparent font-semibold text-emerald-950 outline-none sm:max-w-[112px]"
+                  value={role}
+                  onChange={event => changeRole(event.target.value)}
+                  aria-label="Preview workspace role"
+                >
+                  {['Creator', 'Reviewer', 'Manager', 'Admin'].map(item => <option key={item}>{item}</option>)}
+                </select>
+              </label>
+            )}
+            {user && <div className="hidden min-w-0 items-center gap-2.5 border-l border-slate-200 pl-3 sm:flex">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold uppercase text-emerald-900">
+                {(user?.name || user?.email || 'U').slice(0, 1)}
+              </span>
+              <span className="hidden min-w-0 lg:block">
+                <span className="block max-w-36 truncate text-xs font-semibold text-slate-800">{user?.name || 'Workspace user'}</span>
+                <span className="block text-[11px] text-slate-500">{role}</span>
+              </span>
+            </div>}
+            {user && <button onClick={logout} className="btn-secondary !min-h-9 !px-2.5 sm:!px-3" aria-label="Log out">
+              <LogOut size={15} aria-hidden="true" /><span className="hidden sm:inline">Log out</span>
+            </button>}
+            <button
+              type="button"
+              onClick={() => setMobileOpen(open => !open)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 sm:hidden"
+              aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'}
+              aria-expanded={mobileOpen}
+              aria-controls="mobile-navigation"
+            >
+              {mobileOpen ? <X size={19} /> : <Menu size={19} />}
+            </button>
+          </div>
+        </div>
+
+        <div className="mx-auto hidden max-w-[1500px] px-4 pb-2.5 sm:block sm:px-6 lg:px-8">
+          <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{nav}</div>
+        </div>
+      </header>
+
+      {mobileOpen && (
+        <div id="mobile-navigation" className="border-b border-slate-200 bg-white px-4 py-4 shadow-lg shadow-slate-900/5 sm:hidden">
+          {showRoleSwitcher && (
+            <label className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3 py-2.5 text-sm font-medium text-emerald-950">
+              <span className="inline-flex items-center gap-2"><Users size={16} className="text-emerald-700" /> Preview workspace role</span>
+              <select className="field !w-auto !py-1.5" value={role} onChange={event => changeRole(event.target.value)} aria-label="Preview workspace role">
+                {['Creator', 'Reviewer', 'Manager', 'Admin'].map(item => <option key={item}>{item}</option>)}
+              </select>
+            </label>
+          )}
+          <div className="overflow-x-auto">{nav}</div>
+          <p className="mt-4 text-xs leading-5 text-slate-500">{roleDescriptions[role] || roleDescriptions.Creator}</p>
+        </div>
+      )}
+
+      <div className={`border-b ${previewMode || api.isMock ? 'border-amber-300/20 bg-amber-950 text-amber-50' : 'border-emerald-900/10 bg-emerald-950 text-emerald-50'}`}>
+        <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-4 py-2 sm:px-6 lg:px-8">
+          <p className="flex items-center gap-2 text-xs font-medium">
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${previewMode || api.isMock ? 'bg-amber-300' : 'bg-emerald-300'}`} />
+            {previewMode || api.isMock ? (
+              <span className="font-semibold">
+                {previewMode ? 'Local role preview — not authenticated' : 'Local fixture mode — not authenticated'}
+                {api.isMock && ' · Data and workflow actions are simulated in this browser'}
+                {previewMode && !api.isMock && ' · API operations still require valid authentication'}
+              </span>
+            ) : (
+              <>
+                <span className="font-semibold">{role} workspace</span>
+                <span className="hidden text-emerald-100/75 sm:inline">{roleDescriptions[role] || roleDescriptions.Creator}</span>
+              </>
+            )}
+          </p>
+          {!previewMode && !api.isMock && <span className="hidden text-[11px] text-emerald-200/75 md:inline">Workspace access</span>}
         </div>
       </div>
-      <div className="mx-auto hidden max-w-[1500px] px-4 pb-3 sm:px-6 md:block lg:px-8">{nav}</div>
-      <div className="bg-emerald-900 px-4 py-2 text-xs font-medium text-emerald-50 sm:px-6 lg:px-8"><span className="mr-2 inline-block h-2 w-2 rounded-full bg-emerald-300"/>Viewing as {role}. {role==='Creator'?'Authoring and remediation mode.':role==='Reviewer'?'Review and decision mode.':role==='Manager'?'Governance and approval mode.':'Administration preview mode.'}<span className="float-right hidden text-emerald-300 sm:inline">Pre-Publication Workflow</span></div>
-    </header>
-    {mobileOpen && <div className="border-b bg-white p-4 md:hidden"><label className="mb-3 flex items-center gap-2 text-sm">Role <select className="field !w-auto" value={role} onChange={e => setRole(e.target.value)}>{['Creator','Manager','Reviewer','Admin'].map(r=><option key={r}>{r}</option>)}</select></label>{nav}</div>}
-    <main className="mx-auto max-w-[1500px] px-4 py-7 sm:px-6 lg:px-8">{children || <Outlet/>}</main>
-    <footer className="mx-auto max-w-[1500px] px-4 pb-6 text-xs text-slate-400 sm:px-6 lg:px-8">BrandGuard AI · Explainable, human-controlled brand governance · {api.isMock?'Demo mode':'Connected API mode'}</footer>
-  </div>;
+
+      <main className="page-enter page-shell min-h-[calc(100vh-190px)]">
+        {children || <Outlet />}
+      </main>
+      <footer className="mx-auto flex max-w-[1500px] flex-col gap-1 px-4 pb-6 text-[11px] text-slate-400 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+        <span>BrandGuard AI · Explainable, human-controlled brand governance</span>
+        <span>Brand governance workspace</span>
+      </footer>
+    </div>
+  );
 }

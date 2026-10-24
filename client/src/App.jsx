@@ -11,17 +11,31 @@ import AuditLog from './pages/AuditLog.jsx';
 import Settings from './pages/Settings.jsx';
 import { api } from './api/api.js';
 
-function Protected({ user, children }) { return user ? children : <Navigate to="/login" replace/>; }
+const LOGIN_BYPASS = import.meta.env.DEV && import.meta.env.VITE_LOGIN_BYPASS === 'true';
+
+function Protected({ user, bypass, children }) {
+  return user || bypass ? children : <Navigate to="/login" replace />;
+}
+
 export default function App() {
   const [user,setUser] = useState(null);
   const [role,setRole] = useState('Creator');
   const [loading,setLoading] = useState(true);
   const location = useLocation();
-  useEffect(()=>{api.me().then(u=>{if(u){setUser(u);setRole(u.role||'Creator');}}).catch(()=>{}).finally(()=>setLoading(false));},[]);
+  useEffect(()=>{
+    if (LOGIN_BYPASS) {
+      setLoading(false);
+      return;
+    }
+    api.me().then(u=>{if(u){setUser(u);setRole(u.role||'Creator');}}).catch(()=>{}).finally(()=>setLoading(false));
+  },[]);
   useEffect(()=>{if(user && api.isMock){const updated={...user,role};localStorage.setItem('brandguard-demo-user',JSON.stringify(updated));}},[role,user]);
   if(loading) return <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">Loading BrandGuard…</div>;
-  if(location.pathname==='/login') return user ? <Navigate to="/" replace/> : <Login onLogin={u=>{setUser(u);setRole(u.role||'Creator');}}/>;
-  return <Protected user={user}><Layout role={role} setRole={setRole} user={user}><Routes>
+  if(location.pathname==='/login') {
+    if (LOGIN_BYPASS || user) return <Navigate to="/" replace />;
+    return <Login onLogin={u=>{setUser(u);setRole(u.role||'Creator');}} />;
+  }
+  return <Protected user={user} bypass={LOGIN_BYPASS}><Layout role={role} setRole={setRole} user={user} setUser={setUser} previewMode={LOGIN_BYPASS && !user}><Routes>
     <Route path="/" element={<Dashboard role={role}/>}/>
     <Route path="/drafts" element={<Dashboard role={role}/>}/>
     <Route path="/drafts/new" element={role==='Creator'?<DraftEditor role={role}/>:<Navigate to="/" replace/>}/>
