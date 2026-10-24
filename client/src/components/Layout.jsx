@@ -61,15 +61,15 @@ export default function Layout({ role, setRole, user, setUser, children, preview
     navigate('/login');
   };
 
-  const nav = (
-    <nav aria-label="Main navigation" className="flex min-w-max items-center gap-1.5">
+  const renderNav = mobile => (
+    <nav aria-label="Main navigation" className={mobile ? 'grid gap-1' : 'flex min-w-max items-center gap-1.5'}>
       {links.map(({ to, label, icon: Icon }) => (
         <NavLink
           key={to}
           to={to}
           end={to === '/' || to === '/drafts/new' || (to === '/drafts' && location.pathname === '/drafts/new')}
           onClick={() => setMobileOpen(false)}
-          className={({ isActive }) => `nav-pill ${isActive ? 'nav-pill--active' : ''}`}
+          className={({ isActive }) => `nav-pill ${mobile ? 'w-full justify-start' : ''} ${isActive ? 'nav-pill--active' : ''}`}
         >
           <Icon size={16} strokeWidth={1.9} aria-hidden="true" />
           <span>{label}</span>
@@ -87,19 +87,24 @@ export default function Layout({ role, setRole, user, setUser, children, preview
               <ShieldCheck size={22} strokeWidth={1.8} />
             </span>
             <span className="min-w-0">
-              <span className="block text-[17px] font-bold tracking-tight text-slate-950">
-                Brand<span className="text-emerald-800">Guard</span>
+              <span className="flex items-center gap-2">
+                <span className="block text-[17px] font-bold tracking-tight text-slate-950">
+                  Brand<span className="text-emerald-800">Guard</span>
+                </span>
+                <span className="hidden rounded-md border border-slate-200 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-slate-500 sm:inline-flex">AI</span>
               </span>
-              <span className="hidden text-[11px] font-medium text-slate-500 sm:block">AI brand governance</span>
+              <span className="hidden max-w-44 truncate text-[11px] font-medium text-slate-500 sm:block">
+                {user?.organisation?.name || user?.organisationName || 'Brand governance workspace'}
+              </span>
             </span>
           </NavLink>
 
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            <span className="hidden items-center gap-1.5 rounded-full border border-emerald-100 bg-emerald-50/70 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-900 lg:inline-flex">
-              <Activity size={13} aria-hidden="true" /> Enterprise
+            <span className="hidden items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 xl:inline-flex">
+              <Activity size={13} aria-hidden="true" /> Workspace
             </span>
             {showRoleSwitcher && (
-              <label className="hidden items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/80 px-2 py-1.5 text-xs text-emerald-900 sm:flex sm:gap-2 sm:px-3 sm:py-2">
+              <label className="hidden items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/80 px-2 py-1.5 text-xs text-emerald-900 lg:flex lg:gap-2 lg:px-3 lg:py-2">
                 <Users size={15} className="shrink-0 text-emerald-700" aria-hidden="true" />
                 <select
                   className="max-w-[92px] bg-transparent font-semibold text-emerald-950 outline-none sm:max-w-[112px]"
@@ -126,7 +131,7 @@ export default function Layout({ role, setRole, user, setUser, children, preview
             <button
               type="button"
               onClick={() => setMobileOpen(open => !open)}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 sm:hidden"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 lg:hidden"
               aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'}
               aria-expanded={mobileOpen}
               aria-controls="mobile-navigation"
@@ -136,13 +141,13 @@ export default function Layout({ role, setRole, user, setUser, children, preview
           </div>
         </div>
 
-        <div className="mx-auto hidden max-w-[1500px] px-4 pb-2.5 sm:block sm:px-6 lg:px-8">
-          <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{nav}</div>
+        <div className="mx-auto hidden max-w-[1500px] px-4 pb-2.5 sm:px-6 lg:block lg:px-8">
+          <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{renderNav(false)}</div>
         </div>
       </header>
 
       {mobileOpen && (
-        <div id="mobile-navigation" className="border-b border-slate-200 bg-white px-4 py-4 shadow-lg shadow-slate-900/5 sm:hidden">
+        <div id="mobile-navigation" className="mobile-menu-enter border-b border-slate-200 bg-white px-4 py-4 shadow-lg shadow-slate-900/5 lg:hidden">
           {showRoleSwitcher && (
             <label className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3 py-2.5 text-sm font-medium text-emerald-950">
               <span className="inline-flex items-center gap-2"><Users size={16} className="text-emerald-700" /> Preview workspace role</span>
@@ -151,7 +156,7 @@ export default function Layout({ role, setRole, user, setUser, children, preview
               </select>
             </label>
           )}
-          <div className="overflow-x-auto">{nav}</div>
+          {renderNav(true)}
           <p className="mt-4 text-xs leading-5 text-slate-500">{roleDescriptions[role] || roleDescriptions.Creator}</p>
         </div>
       )}

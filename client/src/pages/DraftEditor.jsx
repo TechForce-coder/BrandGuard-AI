@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -6,7 +5,7 @@ import {
   CheckCircle2,
   LoaderCircle,
   ScanSearch,
-  Send
+  Send,
 } from 'lucide-react';
 
 import { api } from '../api/api.js';
@@ -14,439 +13,448 @@ import Editor from '../components/Editor.jsx';
 import FindingsPanel from '../components/FindingsPanel.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 
-export default function DraftEditor({ role }) {
+export default function DraftEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const [draftId, setDraftId] = useState(id || '');
+  const [draft, setDraft] = useState(null);
   const [title, setTitle] = useState('');
-  const [channel, setChannel] = useState('Website');
+  const [channel, setChannel] = useState('');
   const [text, setText] = useState('');
   const [findings, setFindings] = useState([]);
-  const [status, setStatus] = useState('');
-  const [scanned, setScanned] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
+  const [status, setStatus] = useState('Draft');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
 
-  const readOnly = ['Reviewer', 'Manager', 'Admin'].includes(role);
+  const role = localStorage.getItem('role') || '';
+  const readOnly =
+    role.toLowerCase() === 'reviewer' ||
+    status === 'Pending Approval' ||
+    status === 'Approved';
 
   useEffect(() => {
-    if (!id) return;
-
-    let cancelled = false;
-
-    const loadDraft = async () => {
-      try {
-        setError('');
-
-        const d = await api.getDraft(id);
-
-        if (cancelled) return;
-
-        if (!d) {
-          setError('Draft not found.');
-          return;
-        }
-
-        setDraftId(d._id || d.id || id);
-        setTitle(d.title || '');
-        setChannel(d.channel || 'Website');
-        setText(d.content || d.text || '');
-        setStatus(d.status || '');
-
-        setFindings(
-          Array.isArray(d.findings)
-            ? d.findings.map((finding) => ({
-                ...finding,
-                id: finding.id || finding._id,
-                status: finding.status || 'Open'
-              }))
-            : []
-        );
-
-        setScanned(false);
-      } catch (e) {
-        if (!cancelled) {
-          setError(e.message || 'Unable to load draft.');
-        }
-      }
-    };
-
     loadDraft();
-
-    return () => {
-      cancelled = true;
-    };
   }, [id]);
 
-  const save = async () => {
-    if (!title.trim() || !text.trim()) {
-      setError('Enter a title and draft content first.');
-      return null;
-    }
-
-    setBusy(true);
-    setError('');
-    setMessage('');
-
+  async function loadDraft() {
     try {
-      const saved = await api.saveDraft({
-        id: draftId || undefined,
+      setLoading(true);
+      setError('');
+
+      const response = await api.getDraft(id);
+      const data = response?.draft ?? response?.data ?? response;
+
+      setDraft(data);
+      setTitle(data.title || '');
+      setChannel(data.channel || '');
+      setText(data.content || '');
+      setFindings(data.findings || []);
+      setStatus(data.status || 'Draft');
+    } catch (err) {
+      setError(err.message || 'Failed to load draft.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSave() {
+    try {
+      setSaving(true);
+      setError('');
+      setMessage('');
+
+      const response = await api.updateDraft(id, {
         title,
         channel,
-        content: text
+        content: text,
       });
 
-      const actualId = saved?._id || saved?.id || draftId;
+      const saved = response?.draft ?? response?.data ?? response;
 
-      if (!actualId) {
-        throw new Error('Draft saved, but its ID was not returned.');
-      }
+      setDraft((previous) => ({
+        ...previous,
+        ...saved,
+        title,
+        channel,
+        content: text,
+      }));
 
-      setDraftId(actualId);
-      setStatus(saved.status || status);
-      setMessage('Draft saved.');
-
-      return { ...saved, id: actualId };
-    } catch (e) {
-      setError(e.message || 'Unable to save draft.');
-      return null;
+      setMessage('Draft saved successfully.');
+    } catch (err) {
+      setError(err.message || 'Failed to save draft.');
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
-  };
+  }
 
-  const scan = async () => {
-    const saved = await save();
-
-    if (!saved) return;
-
-    setBusy(true);
-    setError('');
-    setMessage('');
-
+  async function handleScan() {
     try {
-      const result = await api.scanDraft(saved.id);
-      const data = result?.data || result;
-      const items = Array.isArray(data?.findings) ? data.findings : [];
-
-      setFindings(
-        items.map((finding) => ({
-          ...finding,
-          id: finding.id || finding._id,
-          status: finding.status || 'Open'
-        }))
-      );
-
-      setScanned(true);
-      setMessage('Scan complete. Review every finding before submitting.');
-    } catch (e) {
-      setError(e.message || 'Unable to scan draft.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const decision = async (finding, nextStatus, reason) => {
-    try {
-      if (nextStatus === 'Disputed' && !reason?.trim()) {
-        setError('Please enter a proper reason for dispute.');
-        return;
-      }
-
-      const findingIndex = findings.findIndex((f) => f === finding);
-
-      if (findingIndex === -1) {
-        throw new Error('Finding not found.');
-      }
-
-      const result = await api.updateFinding(
-        draftId,
-        String(findingIndex),
-        nextStatus,
-        reason
-      );
-
-      if (result?.success === false) {
-        throw new Error(result.message || 'Unable to update finding.');
-      }
-
-      setFindings((previous) =>
-        previous.map((f, index) =>
-          index === findingIndex
-            ? { ...f, status: nextStatus, reason: reason || '' }
-            : f
-        )
-      );
-
+      setScanning(true);
       setError('');
-      setMessage(
-        nextStatus === 'Disputed'
-          ? 'Finding disputed successfully.'
-          : `Finding ${nextStatus.toLowerCase()} successfully.`
-      );
-    } catch (e) {
-      setError(e.message || 'Unable to update finding.');
-    }
-  };
+      setMessage('');
 
-  const submit = async () => {
-    if (!scanned) {
-      setError('Run a scan on the latest saved draft before submitting.');
-      return;
-    }
+      await handleSave();
 
-    if (findings.some((finding) => finding.status === 'Open')) {
-      setError(
-        'Resolve each finding with Accept, Reject or Dispute before submitting.'
-      );
-      return;
-    }
+      const response = await api.scanDraft(id);
+      const data = response?.draft ?? response?.data ?? response;
 
-    setBusy(true);
-    setError('');
-    setMessage('');
-
-    try {
-      await api.submitDraft(draftId);
-      setStatus('Pending Approval');
-      setMessage('Draft submitted for review.');
-      setTimeout(() => navigate('/'), 500);
-    } catch (e) {
-      setError(e.message || 'Unable to submit draft.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const review = async (action) => {
-    let comment = '';
-
-    if (action === 'changes') {
-      comment = window.prompt('Explain the changes required:') || '';
-
-      if (!comment.trim()) {
-        setError('A comment is required when requesting changes.');
-        return;
+      if (data.findings) {
+        setFindings(data.findings);
       }
-    }
 
-    if (
-      action === 'approve' &&
-      !window.confirm('Approve this draft?')
-    ) {
-      return;
-    }
+      if (data.status) {
+        setStatus(data.status);
+      }
 
-    setBusy(true);
-    setError('');
-    setMessage('');
-
-    try {
-      await api.reviewDraft(
-        draftId,
-        action === 'approve' ? 'approve' : 'changes',
-        comment
-      );
-
-      const nextStatus =
-        action === 'approve' ? 'Approved' : 'Needs Changes';
-
-      setStatus(nextStatus);
-      setMessage(
-        action === 'approve' ? 'Draft approved.' : 'Changes requested.'
-      );
-
-      setTimeout(() => navigate('/review'), 500);
-    } catch (e) {
-      setError(e.message || 'Unable to review draft.');
+      setMessage('Draft scan completed.');
+    } catch (err) {
+      setError(err.message || 'Failed to scan draft.');
     } finally {
-      setBusy(false);
+      setScanning(false);
     }
-  };
+  }
+
+  async function handleDecision(findingId, decision) {
+    try {
+      setError('');
+      setMessage('');
+
+      const response = await api.updateFindingDecision(
+        id,
+        findingId,
+        decision
+      );
+
+      const data = response?.draft ?? response?.data ?? response;
+
+      if (data.findings) {
+        setFindings(data.findings);
+      } else {
+        await loadDraft();
+      }
+
+      setMessage('Finding decision updated.');
+    } catch (err) {
+      setError(err.message || 'Failed to update finding decision.');
+    }
+  }
+
+  async function handleSubmit() {
+    try {
+      setSubmitting(true);
+      setError('');
+      setMessage('');
+
+      await handleSave();
+
+      const response = await api.submitDraft(id);
+      const data = response?.draft ?? response?.data ?? response;
+
+      if (data.status) {
+        setStatus(data.status);
+      } else {
+        setStatus('Pending Approval');
+      }
+
+      setMessage('Draft submitted for approval.');
+    } catch (err) {
+      setError(err.message || 'Failed to submit draft.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleReview(decision, comments = '') {
+    try {
+      setSaving(true);
+      setError('');
+      setMessage('');
+
+      const response = await api.reviewDraft(id, {
+        decision,
+        comments,
+      });
+
+      const data = response?.draft ?? response?.data ?? response;
+
+      if (data.status) {
+        setStatus(data.status);
+      }
+
+      setMessage('Review submitted successfully.');
+      await loadDraft();
+    } catch (err) {
+      setError(err.message || 'Failed to submit review.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center gap-2 p-10">
+        <LoaderCircle className="animate-spin" size={20} />
+        <span>Loading draft...</span>
+      </div>
+    );
+  }
+
+  if (error && !draft) {
+    return (
+      <section className="surface-card space-y-4 p-6">
+        <p className="text-rose-600">{error}</p>
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="btn-secondary"
+        >
+          Go back
+        </button>
+      </section>
+    );
+  }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="space-y-6">
       <button
-        className="btn-secondary !border-0 !bg-transparent !px-0"
+        type="button"
         onClick={() => navigate(-1)}
+        className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
       >
-        <ArrowLeft size={16} /> Back
+        <ArrowLeft size={16} />
+        Back
       </button>
 
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-emerald-700">
-            {id ? 'Content review' : 'New content'}
-          </p>
+      <section className="surface-card space-y-5 p-5 sm:p-7">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">
+              {title || 'Untitled draft'}
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Edit your content and check it against your organisation's
+              brand guidelines.
+            </p>
+          </div>
 
-          <h1 className="mt-1 text-3xl font-bold tracking-tight">
-            {id ? title || 'Draft details' : 'Create a draft'}
-          </h1>
-
-          <p className="mt-2 text-sm text-slate-500">
-            Write clearly, scan against policy, then review findings.
-          </p>
+          <StatusBadge status={status} />
         </div>
 
-        {id && (
-          <StatusBadge
-            status={readOnly && !status ? 'Review mode' : status || 'Draft'}
-          />
+        {error && (
+          <p className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">
+            {error}
+          </p>
         )}
-      </div>
 
-      {error && (
-        <div
-          role="alert"
-          className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"
-        >
-          {error}
-        </div>
-      )}
+        {message && (
+          <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">
+            {message}
+          </p>
+        )}
 
-      {message && (
-        <div
-          role="status"
-          className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
-        >
-          {message}
-        </div>
-      )}
-
-      <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block text-sm font-semibold">
-            Content title
-            <input
-              className="field mt-2"
-              value={title}
-              onChange={(e) => {
-                setTitle(e.target.value);
-                setScanned(false);
-              }}
-              placeholder="e.g. Summer wellness campaign"
-              readOnly={readOnly}
-            />
+        <div className="space-y-2">
+          <label
+            htmlFor="draft-title"
+            className="block text-sm font-medium text-slate-700"
+          >
+            Content title{' '}
+            <span className="text-rose-600" aria-hidden="true">
+              *
+            </span>
           </label>
 
-          <label className="block text-sm font-semibold">
-            Channel
-            <select
-              className="field mt-2"
-              value={channel}
-              onChange={(e) => {
-                setChannel(e.target.value);
-                setScanned(false);
-              }}
-              disabled={readOnly}
-            >
-              {[
-                'Instagram',
-                'Website',
-                'Press Release',
-                'Email Newsletter',
-                'Paid Advertisement',
-                'Other'
-              ].map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </label>
+          <input
+            id="draft-title"
+            type="text"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            disabled={readOnly}
+            required={!readOnly}
+            className="input w-full"
+            placeholder="Enter a title"
+          />
         </div>
 
-        <label className="block text-sm font-semibold">
-          Draft content
+        <div className="space-y-2">
+          <label
+            htmlFor="draft-channel"
+            className="block text-sm font-medium text-slate-700"
+          >
+            Channel{' '}
+            <span className="text-rose-600" aria-hidden="true">
+              *
+            </span>
+          </label>
+
+          <select
+            id="draft-channel"
+            value={channel}
+            onChange={(event) => setChannel(event.target.value)}
+            disabled={readOnly}
+            required={!readOnly}
+            className="input w-full"
+          >
+            <option value="">Select a channel</option>
+            <option value="Website">Website</option>
+            <option value="Social Media">Social Media</option>
+            <option value="Email">Email</option>
+            <option value="Blog">Blog</option>
+            <option value="Advertisement">Advertisement</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <label
+            htmlFor="draft-content"
+            className="block text-sm font-medium text-slate-700"
+          >
+            Draft content{' '}
+            <span className="text-rose-600" aria-hidden="true">
+              *
+            </span>
+          </label>
+
           <Editor
             value={text}
-            onChange={(value) => {
-              setText(value);
-              setScanned(false);
-            }}
+            onChange={setText}
             readOnly={readOnly}
           />
-        </label>
 
-        <p className="text-xs text-slate-400">
-          If you edit after scanning, scan again before submitting.
-        </p>
+          <div className="flex justify-end text-xs text-slate-500">
+            {text.length.toLocaleString()} characters
+          </div>
+        </div>
 
         {!readOnly && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-3">
             <button
-              disabled={busy}
-              className="btn-secondary"
-              onClick={save}
+              type="button"
+              onClick={handleSave}
+              disabled={saving || scanning || submitting}
+              className="btn-secondary inline-flex items-center gap-2"
             >
-              {busy && <LoaderCircle size={16} className="animate-spin" />}
+              {saving && <LoaderCircle className="animate-spin" size={16} />}
               Save draft
             </button>
 
             <button
-              disabled={busy}
-              className="btn-success"
-              onClick={scan}
+              type="button"
+              onClick={handleScan}
+              disabled={saving || scanning || submitting}
+              className="btn-primary inline-flex items-center gap-2"
             >
-              <ScanSearch size={16} /> Run Check
+              {scanning ? (
+                <LoaderCircle className="animate-spin" size={16} />
+              ) : (
+                <ScanSearch size={16} />
+              )}
+              Scan draft
             </button>
+
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={saving || scanning || submitting}
+              className="btn-primary inline-flex items-center gap-2"
+            >
+              {submitting ? (
+                <LoaderCircle className="animate-spin" size={16} />
+              ) : (
+                <Send size={16} />
+              )}
+              Submit for approval
+            </button>
+          </div>
+        )}
+
+        {readOnly && (
+          <div className="rounded-lg bg-emerald-50 p-4 text-sm text-emerald-800">
+            This draft is currently read-only.
           </div>
         )}
       </section>
 
-      <section className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 sm:p-7">
+      <section className="surface-card space-y-4 p-5 sm:p-7">
         <div>
-          <h2 className="text-xl font-bold">Review Findings</h2>
+          <h2 className="text-xl font-semibold text-slate-900">
+            Scan findings
+          </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Review concerns and suggested changes.
+            Review the issues identified in your draft.
           </p>
         </div>
 
-        {!scanned && findings.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">
-            Run Check to see findings for this draft.
-          </p>
-        ) : (
+        {findings.length > 0 ? (
           <FindingsPanel
             findings={findings}
-            onDecision={decision}
+            onDecision={handleDecision}
             readOnly={readOnly}
           />
+        ) : (
+          <div className="rounded-xl bg-slate-50/80 p-6 text-center">
+            <CheckCircle2
+              className="mx-auto mb-2 text-slate-400"
+              size={24}
+            />
+            <p className="text-sm text-slate-600">
+              No scan findings available yet.
+            </p>
+          </div>
         )}
       </section>
 
-      <div className="flex flex-wrap justify-end gap-2">
-        {!readOnly && (
-          <button
-            disabled={busy || !draftId}
-            className="btn-success"
-            onClick={submit}
-          >
-            <Send size={16} /> Submit for Review
-          </button>
-        )}
+      {role.toLowerCase() === 'reviewer' &&
+        status === 'Pending Approval' && (
+          <section className="surface-card space-y-4 p-5 sm:p-7">
+            <h2 className="text-xl font-semibold text-slate-900">
+              Review draft
+            </h2>
 
-        {(role === 'Reviewer' || role === 'Manager') && id && (
-          <>
-            <button
-              disabled={busy}
-              className="btn-success"
-              onClick={() => review('approve')}
-            >
-              <CheckCircle2 size={16} /> Approve
-            </button>
-
-            <button
-              disabled={busy}
-              className="btn-secondary"
-              onClick={() => review('changes')}
-            >
-              Request Changes
-            </button>
-          </>
+            <ReviewActions
+              onReview={handleReview}
+              loading={saving}
+            />
+          </section>
         )}
+    </div>
+  );
+}
+
+function ReviewActions({ onReview, loading }) {
+  const [comments, setComments] = useState('');
+
+  return (
+    <div className="space-y-4">
+      <textarea
+        value={comments}
+        onChange={(event) => setComments(event.target.value)}
+        className="input min-h-24 w-full"
+        placeholder="Add review comments (optional)"
+      />
+
+      <div className="flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={() => onReview('Approved', comments)}
+          disabled={loading}
+          className="btn-primary"
+        >
+          Approve
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onReview('Needs Changes', comments)}
+          disabled={loading}
+          className="btn-secondary"
+        >
+          Request changes
+        </button>
       </div>
     </div>
   );

@@ -4,10 +4,12 @@ import {
   Activity,
   ArrowRight,
   CheckCircle2,
+  ClipboardCheck,
   Clock3,
   FileText,
   Plus,
   Search,
+  Settings,
   ShieldCheck,
   Sparkles,
   Workflow
@@ -48,12 +50,23 @@ const rolePresentation = {
   }
 };
 
+const roleActions = {
+  Creator: { label: 'Create content', to: '/drafts/new', icon: Plus },
+  Reviewer: { label: 'Open review queue', to: '/review', icon: ClipboardCheck },
+  Manager: { label: 'Open approval workflow', to: '/review', icon: ArrowRight },
+  Admin: { label: 'Administration', to: '/settings', icon: Settings }
+};
+
 export default function Dashboard({ role }) {
   const [drafts, setDrafts] = useState([]);
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [activity, setActivity] = useState([]);
+  const [activityError, setActivityError] = useState('');
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityRefresh, setActivityRefresh] = useState(0);
 
   const navigate = useNavigate();
 
@@ -108,6 +121,36 @@ export default function Dashboard({ role }) {
     load();
   }, []);
 
+  useEffect(() => {
+    if (!['Manager', 'Admin'].includes(role)) {
+      setActivity([]);
+      setActivityError('');
+      setActivityLoading(false);
+      return undefined;
+    }
+
+    let active = true;
+    setActivityLoading(true);
+    setActivityError('');
+
+    api.getAudit()
+      .then(result => {
+        if (!active) return;
+        const items = Array.isArray(result) ? result : result?.logs || [];
+        setActivity(items.slice(0, 4));
+      })
+      .catch(reason => {
+        if (active) setActivityError(reason.message || 'Unable to load audit activity.');
+      })
+      .finally(() => {
+        if (active) setActivityLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [role, activityRefresh]);
+
   
 const visible = useMemo(() => {
   return drafts.filter((draft) => {
@@ -156,6 +199,8 @@ const visible = useMemo(() => {
   ).length;
   const flagged = drafts.filter((draft) => draft.findingsCount > 0).length;
   const presentation = rolePresentation[role] || rolePresentation.Creator;
+  const action = roleActions[role] || roleActions.Creator;
+  const ActionIcon = action.icon;
   const dataUnavailable = loading || Boolean(error);
 
   return (
@@ -181,15 +226,13 @@ const visible = useMemo(() => {
               <p className="mt-2 text-sm text-slate-500">Approved</p>
               <p className="mt-0.5 text-2xl font-semibold tracking-tight text-slate-950">{dataUnavailable ? '—' : reviewed}</p>
             </div>
-            {role === 'Creator' && (
-              <button
-                className="btn-success sm:min-h-[48px]"
-                onClick={() => navigate('/drafts/new')}
-              >
-                <Plus size={17} aria-hidden="true" />
-                Create content
-              </button>
-            )}
+            <button
+              className="btn-success sm:min-h-[48px]"
+              onClick={() => navigate(action.to)}
+            >
+              <ActionIcon size={17} aria-hidden="true" />
+              {action.label}
+            </button>
           </div>
         </div>
       </section>
@@ -397,15 +440,78 @@ const visible = useMemo(() => {
 
           <section className="surface-card p-5 sm:p-6">
             <div>
-              <h2 className="text-lg font-bold text-slate-950">Recent activity</h2>
-              <p className="mt-1 text-sm text-slate-500">Activity data is unavailable in the current backend.</p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-950">Recent activity</h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {['Manager', 'Admin'].includes(role)
+                      ? 'Latest recorded workspace events.'
+                      : 'Audit events are available to governance roles.'}
+                  </p>
+                </div>
+                {['Manager', 'Admin'].includes(role) && (
+                  <button
+                    type="button"
+                    className="shrink-0 text-xs font-semibold text-emerald-800 transition hover:text-emerald-950"
+                    onClick={() => navigate('/audit')}
+                  >
+                    View log
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="py-8 text-center">
-              <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
-                <Activity size={21} aria-hidden="true" />
-              </span>
-              <p className="mt-3 text-sm font-semibold text-slate-700">Activity feed unavailable</p>
-            </div>
+            {activityLoading ? (
+              <div className="mt-5 space-y-4" aria-label="Loading recent activity">
+                {[1, 2, 3].map(item => (
+                  <div key={item} className="flex gap-3">
+                    <div className="skeleton h-8 w-8 shrink-0 rounded-lg" />
+                    <div className="min-w-0 flex-1">
+                      <div className="skeleton h-3.5 w-3/4" />
+                      <div className="skeleton mt-2 h-3 w-1/2" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : activityError ? (
+              <div role="alert" className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-sm text-rose-800">
+                <p>{activityError}</p>
+                <button
+                  type="button"
+                  className="mt-2 font-semibold underline decoration-rose-300 underline-offset-2"
+                  onClick={() => setActivityRefresh(value => value + 1)}
+                >
+                  Retry
+                </button>
+              </div>
+            ) : !['Manager', 'Admin'].includes(role) ? (
+              <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-center">
+                <ShieldCheck className="mx-auto text-slate-400" size={20} aria-hidden="true" />
+                <p className="mt-2 text-xs leading-5 text-slate-500">Audit events are restricted to governance roles.</p>
+              </div>
+            ) : activity.length ? (
+              <ol className="mt-4 divide-y divide-slate-100">
+                {activity.map((item, index) => (
+                  <li key={item.id || index} className="flex items-start gap-3 py-3 first:pt-1 last:pb-0">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800">
+                      <Activity size={15} aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-800">{item.action || item.event || 'Workflow event'}</p>
+                      <p className="mt-0.5 truncate text-xs text-slate-500">
+                        {item.item || item.resource || 'Workspace'} <span className="text-slate-300">·</span> {item.actor || item.user || 'System'}
+                      </p>
+                    </div>
+                    <time className="shrink-0 pt-0.5 text-[11px] text-slate-400">{item.when || item.createdAt || '—'}</time>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-6 text-center">
+                <Activity className="mx-auto text-slate-400" size={20} aria-hidden="true" />
+                <p className="mt-2 text-sm font-semibold text-slate-700">No activity recorded yet</p>
+                <p className="mt-1 text-xs text-slate-500">Recorded workflow events will appear here.</p>
+              </div>
+            )}
           </section>
         </aside>
       </div>
