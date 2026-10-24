@@ -19,16 +19,28 @@ app.use("/api/organisations", organisationRoutes);
 app.use("/api/findings", findingRoutes);
 
 
-// Test route
-app.get("/", (req, res) => {
-    if (process.env.NODE_ENV === "production") {
-        return res.sendFile(
-            path.join(__dirname, "../client/dist/index.html")
-        );
-    }
+// Serve React frontend in production
+if (process.env.NODE_ENV === "production") {
+    const frontendPath = path.join(__dirname, "../client/dist");
+    const indexFile = path.join(frontendPath, "index.html");
 
-    res.json({ message: "Welcome to BrandGuard AI API" });
-});
+    app.use(express.static(frontendPath));
+
+    // Unknown API endpoints must return JSON, not React HTML.
+    app.use("/api", (req, res) => {
+        res.status(404).json({
+            success: false,
+            message: "API endpoint not found"
+        });
+    });
+
+    // Serve React for frontend routes (including refresh/direct navigation).
+    app.get(/.*/, (req, res, next) => {
+        res.sendFile(indexFile, (err) => {
+            if (err) next(err);
+        });
+    });
+}
 app.get("/api/protected", authenticate, (req, res) => {
     res.json({
         success: true,
