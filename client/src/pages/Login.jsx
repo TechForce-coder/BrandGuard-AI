@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { ArrowRight, Check, Eye, EyeOff, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react';
 import { api } from '../api/api.js';
 
-export default function Login({ onLogin }) {
+export default function Login({ onLogin, sessionError = '' }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('Creator');
+  const [previewRole, setPreviewRole] = useState('Creator');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -15,8 +15,8 @@ export default function Login({ onLogin }) {
     setError('');
     setBusy(true);
     try {
-      const result = await api.login(email, password, role);
-      onLogin(result.user || { name: email.split('@')[0], email, role });
+      const result = await api.login(email, password);
+      onLogin(result.user, previewRole);
     } catch (reason) {
       setError(reason.message);
     } finally {
@@ -83,16 +83,21 @@ export default function Login({ onLogin }) {
               </button>
             </div>
           </label>
-          {api.isMock && (
-            <label className="mt-4 block text-sm font-semibold text-slate-800">
-              Workspace role preview
-              <select className="field mt-2" value={role} onChange={event => setRole(event.target.value)}>
-                {['Creator', 'Reviewer', 'Manager', 'Admin'].map(item => <option key={item}>{item}</option>)}
-              </select>
-              <span className="mt-1.5 block text-xs font-normal text-slate-500">Local test authentication is enabled; credentials are not verified.</span>
-            </label>
-          )}
-          {error && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-sm text-rose-800">{error}</p>}
+          <label className="mt-4 block text-sm font-semibold text-slate-800">
+            Workspace preview after sign in
+            <select
+              className="field mt-2"
+              value={previewRole}
+              onChange={event => setPreviewRole(event.target.value)}
+              aria-label="Preview workspace role after sign in"
+            >
+              {['Creator', 'Reviewer', 'Manager', 'Admin'].map(item => <option key={item}>{item}</option>)}
+            </select>
+            <span className="mt-1.5 block text-xs font-normal leading-5 text-slate-500">
+              Preview only. Your account role and permissions are set by your organization.
+            </span>
+          </label>
+          {(error || sessionError) && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-sm text-rose-800">{error || sessionError}</p>}
           <button disabled={busy} className="btn-success mt-6 w-full justify-center py-3">
             {busy ? 'Signing in…' : 'Sign in'} <ArrowRight size={16} />
           </button>

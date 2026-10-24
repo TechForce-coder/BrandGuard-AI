@@ -41,19 +41,16 @@ const roleDescriptions = {
   Admin: 'Manage administration and workspace activity.'
 };
 
-export default function Layout({ role, setRole, user, setUser, children, previewMode = false }) {
+export default function Layout({ role, actualRole, user, setUser, setRole, children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const links = roleLinks[role] || roleLinks.Creator;
-  const showRoleSwitcher = previewMode || api.isMock;
-
   const changeRole = nextRole => {
     setRole(nextRole);
     setMobileOpen(false);
     navigate('/');
   };
-
   const logout = () => {
     if (!user) return;
     api.logout();
@@ -103,26 +100,26 @@ export default function Layout({ role, setRole, user, setUser, children, preview
             <span className="hidden items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 xl:inline-flex">
               <Activity size={13} aria-hidden="true" /> Workspace
             </span>
-            {showRoleSwitcher && (
-              <label className="hidden items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/80 px-2 py-1.5 text-xs text-emerald-900 lg:flex lg:gap-2 lg:px-3 lg:py-2">
-                <Users size={15} className="shrink-0 text-emerald-700" aria-hidden="true" />
-                <select
-                  className="max-w-[92px] bg-transparent font-semibold text-emerald-950 outline-none sm:max-w-[112px]"
-                  value={role}
-                  onChange={event => changeRole(event.target.value)}
-                  aria-label="Preview workspace role"
-                >
-                  {['Creator', 'Reviewer', 'Manager', 'Admin'].map(item => <option key={item}>{item}</option>)}
-                </select>
-              </label>
-            )}
+            <label className="hidden items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/80 px-2 py-1.5 text-xs text-emerald-950 sm:flex sm:px-3 sm:py-2">
+              <Users size={15} className="shrink-0 text-emerald-700" aria-hidden="true" />
+              <span className="font-medium">Preview</span>
+              <select
+                className="max-w-[92px] bg-transparent font-semibold outline-none sm:max-w-[112px]"
+                value={role}
+                onChange={event => changeRole(event.target.value)}
+                aria-label="Preview workspace role"
+                title={`Preview workspace UI. Your account role is ${actualRole}; server permissions do not change.`}
+              >
+                {['Creator', 'Reviewer', 'Manager', 'Admin'].map(item => <option key={item}>{item}</option>)}
+              </select>
+            </label>
             {user && <div className="hidden min-w-0 items-center gap-2.5 border-l border-slate-200 pl-3 sm:flex">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold uppercase text-emerald-900">
                 {(user?.name || user?.email || 'U').slice(0, 1)}
               </span>
               <span className="hidden min-w-0 lg:block">
                 <span className="block max-w-36 truncate text-xs font-semibold text-slate-800">{user?.name || 'Workspace user'}</span>
-                <span className="block text-[11px] text-slate-500">{role}</span>
+                <span className="block text-[11px] text-slate-500">Account: {actualRole}</span>
               </span>
             </div>}
             {user && <button onClick={logout} className="btn-secondary !min-h-9 !px-2.5 sm:!px-3" aria-label="Log out">
@@ -148,29 +145,25 @@ export default function Layout({ role, setRole, user, setUser, children, preview
 
       {mobileOpen && (
         <div id="mobile-navigation" className="mobile-menu-enter border-b border-slate-200 bg-white px-4 py-4 shadow-lg shadow-slate-900/5 lg:hidden">
-          {showRoleSwitcher && (
-            <label className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3 py-2.5 text-sm font-medium text-emerald-950">
-              <span className="inline-flex items-center gap-2"><Users size={16} className="text-emerald-700" /> Preview workspace role</span>
-              <select className="field !w-auto !py-1.5" value={role} onChange={event => changeRole(event.target.value)} aria-label="Preview workspace role">
-                {['Creator', 'Reviewer', 'Manager', 'Admin'].map(item => <option key={item}>{item}</option>)}
-              </select>
-            </label>
-          )}
+          <label className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3 py-2.5 text-sm font-medium text-emerald-950 sm:hidden">
+            <span className="inline-flex items-center gap-2"><Users size={16} className="text-emerald-700" /> Preview workspace role</span>
+            <select className="field !w-auto !py-1.5" value={role} onChange={event => changeRole(event.target.value)} aria-label="Preview workspace role">
+              {['Creator', 'Reviewer', 'Manager', 'Admin'].map(item => <option key={item}>{item}</option>)}
+            </select>
+          </label>
           {renderNav(true)}
-          <p className="mt-4 text-xs leading-5 text-slate-500">{roleDescriptions[role] || roleDescriptions.Creator}</p>
+          <p className="mt-4 text-xs leading-5 text-slate-500">
+            Preview only. Your account role is {actualRole}; server permissions are unchanged.
+          </p>
         </div>
       )}
 
-      <div className={`${previewMode || api.isMock ? 'border-b border-amber-200 bg-[#fffdf5] text-amber-950' : 'border-b border-emerald-900/10 bg-emerald-950 text-emerald-50'}`}>
-        <div className={`mx-auto flex max-w-[1500px] items-center justify-between gap-4 ${previewMode || api.isMock ? 'my-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2 sm:px-5' : 'px-4 py-2 sm:px-6 lg:px-8'}`}>
+      <div className={`border-b ${role !== actualRole ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-emerald-900/10 bg-emerald-950 text-emerald-50'}`}>
+        <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-4 py-2 sm:px-6 lg:px-8">
           <p className="flex items-center gap-2 text-xs font-medium">
-            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${previewMode || api.isMock ? 'bg-amber-300' : 'bg-emerald-300'}`} />
-            {previewMode || api.isMock ? (
-              <span className="font-semibold">
-                {previewMode ? 'Local role preview — not authenticated' : 'Local fixture mode — not authenticated'}
-                {api.isMock && ' · Data and workflow actions are simulated in this browser'}
-                {previewMode && !api.isMock && ' · API operations still require valid authentication'}
-              </span>
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${role !== actualRole ? 'bg-amber-500' : 'bg-emerald-300'}`} />
+            {role !== actualRole ? (
+              <span className="font-semibold">Previewing {role} workspace · Account role: {actualRole}. Server permissions are unchanged.</span>
             ) : (
               <>
                 <span className="font-semibold">{role} workspace</span>
@@ -178,7 +171,7 @@ export default function Layout({ role, setRole, user, setUser, children, preview
               </>
             )}
           </p>
-          {!previewMode && !api.isMock && <span className="hidden text-[11px] text-emerald-200/75 md:inline">Workspace access</span>}
+          {role === actualRole && <span className="hidden text-[11px] text-emerald-200/75 md:inline">Workspace access</span>}
         </div>
       </div>
 

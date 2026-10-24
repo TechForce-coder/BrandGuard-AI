@@ -19,6 +19,10 @@ const draftSchema = new mongoose.Schema(
             type: Number,
             default: 0
         },
+        scannedAt: {
+            type: Date,
+            default: null
+        },
         channel: {
             type: String,
             default: "Website"

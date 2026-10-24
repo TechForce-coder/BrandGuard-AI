@@ -7,6 +7,13 @@ const updateFinding = async (req, res) => {
         const { status, reason } = req.body;
 
         const allowedStatuses = ["Accepted", "Rejected", "Disputed"];
+
+        if (reason !== undefined && typeof reason !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Finding reason must be a string"
+            });
+        }
         
         if (status === "Disputed" && (!reason || !reason.trim())) {
             return res.status(400).json({
@@ -60,6 +67,20 @@ const updateFinding = async (req, res) => {
             });
         }
 
+        if (String(draft.author) !== String(req.user.userId)) {
+            return res.status(403).json({
+                success: false,
+                message: "Only the draft author can update its findings"
+            });
+        }
+
+        if (!["Draft", "Needs Changes"].includes(draft.status)) {
+            return res.status(409).json({
+                success: false,
+                message: "Findings can only be updated while content is editable"
+            });
+        }
+
         if (
             !Array.isArray(draft.findings) ||
             findingIndex >= draft.findings.length
@@ -72,6 +93,9 @@ const updateFinding = async (req, res) => {
 
         draft.findings[findingIndex].status = status;
         draft.findings[findingIndex].reason = reason || "";
+        draft.findingsCount = draft.findings.filter((finding) =>
+            !finding.status || finding.status === "Open"
+        ).length;
 
         draft.markModified("findings");
         await draft.save();

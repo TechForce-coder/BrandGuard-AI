@@ -1,6 +1,5 @@
 
 const Draft = require("../models/Draft");
-const mongoose = require("mongoose");
 const { scanContent } = require("../services/geminiService");
 const AuditLog = require("../models/AuditLog");
 
@@ -9,10 +8,17 @@ const createDraft = async (req, res) => {
     try {
         const { title, content, channel } = req.body;
 
-        if (!title || !title.trim()) {
+        if (typeof title !== "string" || !title.trim()) {
             return res.status(400).json({
                 success: false,
                 message: "Draft title is required"
+            });
+        }
+
+        if (content !== undefined && typeof content !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Draft content must be a string"
             });
         }
 
@@ -42,9 +48,16 @@ const createDraft = async (req, res) => {
 
 const getDrafts = async (req, res) => {
     try {
-        const drafts = await Draft.find({
+        const query = {
             organisationId: req.user.organisationId
-        })
+        };
+        if (String(req.user.role).toLowerCase() === "creator") {
+            query.author = req.user.userId;
+        } else if (String(req.user.role).toLowerCase() === "reviewer") {
+            query.status = { $ne: "Draft" };
+        }
+
+        const drafts = await Draft.find(query)
             .populate("author", "name email")
             .sort({ updatedAt: -1 })
             .lean();
@@ -96,6 +109,18 @@ const getDraftById = async (req, res) => {
             });
         }
 
+        if (
+            (String(req.user.role).toLowerCase() === "creator" &&
+                String(draft.author?._id || draft.author) !== String(req.user.userId)) ||
+            (String(req.user.role).toLowerCase() === "reviewer" &&
+                draft.status === "Draft")
+        ) {
+            return res.status(404).json({
+                success: false,
+                message: "Draft not found"
+            });
+        }
+
         return res.status(200).json({
             success: true,
             draft
@@ -117,10 +142,17 @@ const updateDraft = async (req, res) => {
     try {
         const { title, content, channel } = req.body;
 
-        if (!title || !title.trim()) {
+        if (typeof title !== "string" || !title.trim()) {
             return res.status(400).json({
                 success: false,
                 message: "Draft title is required"
+            });
+        }
+
+        if (content !== undefined && typeof content !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Draft content must be a string"
             });
         }
 
@@ -134,6 +166,20 @@ const updateDraft = async (req, res) => {
             return res.status(404).json({
                 success: false,
                 message: "Draft not found"
+            });
+        }
+
+        if (String(draft.author) !== String(req.user.userId)) {
+            return res.status(403).json({
+                success: false,
+                message: "Only the draft author can update this content"
+            });
+        }
+
+        if (!["Draft", "Needs Changes"].includes(draft.status)) {
+            return res.status(409).json({
+                success: false,
+                message: "Only drafts or content returned for changes can be edited"
             });
         }
 
@@ -156,6 +202,7 @@ const updateDraft = async (req, res) => {
         if (contentChanged) {
             draft.findings = [];
             draft.findingsCount = 0;
+            draft.scannedAt = null;
             draft.status = "Draft";
         }
 
@@ -200,10 +247,24 @@ const scanDraft = async (req, res) => {
             });
         }
 
+        if (String(draft.author) !== String(req.user.userId)) {
+            return res.status(403).json({
+                success: false,
+                message: "Only the draft author can scan this content"
+            });
+        }
+
         if (!draft.content || !draft.content.trim()) {
             return res.status(400).json({
                 success: false,
                 message: "Add content before scanning"
+            });
+        }
+
+        if (!["Draft", "Needs Changes"].includes(draft.status)) {
+            return res.status(409).json({
+                success: false,
+                message: "Only drafts or content returned for changes can be scanned"
             });
         }
 
@@ -218,6 +279,7 @@ const scanDraft = async (req, res) => {
         // Save scan results in MongoDB
         draft.findings = findings;
         draft.findingsCount = findings.length;
+        draft.scannedAt = new Date();
 
         await draft.save();
 
@@ -261,10 +323,38 @@ const submitDraft = async (req, res) => {
             });
         }
 
+        if (String(draft.author) !== String(req.user.userId)) {
+            return res.status(403).json({
+                success: false,
+                message: "Only the draft author can submit this content"
+            });
+        }
+
+        if (!["Draft", "Needs Changes"].includes(draft.status)) {
+            return res.status(409).json({
+                success: false,
+                message: "Only drafts or content returned for changes can be submitted"
+            });
+        }
+
         if (!draft.title.trim() || !draft.content.trim()) {
             return res.status(400).json({
                 success: false,
                 message: "Title and content are required"
+            });
+        }
+
+        if (!draft.scannedAt) {
+            return res.status(400).json({
+                success: false,
+                message: "Run a content scan before submitting"
+            });
+        }
+
+        if (draft.findings.some((finding) => !finding.status || finding.status === "Open")) {
+            return res.status(400).json({
+                success: false,
+                message: "Resolve all scan findings before submitting"
             });
         }
 
@@ -328,6 +418,13 @@ const reviewDraft = async (req, res) => {
             });
         }
 
+        if (String(draft.author) === String(req.user.userId)) {
+            return res.status(403).json({
+                success: false,
+                message: "Users cannot review their own content"
+            });
+        }
+
         if (draft.status !== "Pending Approval") {
             return res.status(400).json({
                 success: false,
@@ -356,11 +453,7 @@ const reviewDraft = async (req, res) => {
 
         // Save the review action in the audit log
         
-        console.log("Creating audit log...");
-        console.log("User:", req.user.userId);
-        console.log("Organisation:", req.user.organisationId);
-
-        const auditRecord = await AuditLog.create({
+        await AuditLog.create({
             draft: draft._id,
             user: req.user.userId,
             organisationId: req.user.organisationId,
@@ -369,12 +462,6 @@ const reviewDraft = async (req, res) => {
             previousStatus,
             newStatus: draft.status
         });
-        console.log("Connected database:", mongoose.connection.name);
-console.log("Audit collection:", AuditLog.collection.name);
-
-        console.log("Audit log saved:", auditRecord._id);
-
-
         return res.status(200).json({
             success: true,
             message:

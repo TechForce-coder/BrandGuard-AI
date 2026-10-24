@@ -1,13 +1,16 @@
 {
   "name": "brandguard-ai",
   "version": "1.0.0",
-  "description": "React + Vite + Tailwind + React Router starter matching the supplied BrandGuard prototype.",
-  "main": "index.js",
+  "description": "BrandGuard AI full-stack application",
+  "main": "start.js",
   "devDependencies": {
     "concurrently": "^10.0.6"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "concurrently --kill-others \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "start": "node start.js",
+    "build": "npm --prefix client run build",
+    "test": "npm --prefix server test"
   },
   "repository": {
     "type": "git",

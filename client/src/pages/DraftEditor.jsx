@@ -13,11 +13,12 @@ import Editor from '../components/Editor.jsx';
 import FindingsPanel from '../components/FindingsPanel.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 
-export default function DraftEditor() {
+export default function DraftEditor({ actualRole }) {
   const { id } = useParams();
   const navigate = useNavigate();
 
   const [draft, setDraft] = useState(null);
+  const [draftId, setDraftId] = useState(id || '');
   const [title, setTitle] = useState('');
   const [channel, setChannel] = useState('');
   const [text, setText] = useState('');
@@ -27,16 +28,24 @@ export default function DraftEditor() {
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [scanned, setScanned] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
-  const role = localStorage.getItem('role') || '';
-  const readOnly =
-    role.toLowerCase() === 'reviewer' ||
-    status === 'Pending Approval' ||
-    status === 'Approved';
+  const authenticatedRole = String(actualRole || '').toLowerCase();
+  const canReview = ['reviewer', 'manager', 'admin'].includes(authenticatedRole);
+  const readOnly = authenticatedRole !== 'creator' || (
+    Boolean(draftId) && !['Draft', 'Needs Changes'].includes(status)
+  );
 
   useEffect(() => {
+    if (!id) {
+      setDraftId('');
+      setDraft(null);
+      setLoading(false);
+      return;
+    }
+
     loadDraft();
   }, [id]);
 
@@ -49,11 +58,13 @@ export default function DraftEditor() {
       const data = response?.draft ?? response?.data ?? response;
 
       setDraft(data);
+      setDraftId(data._id || data.id || id);
       setTitle(data.title || '');
       setChannel(data.channel || '');
       setText(data.content || '');
       setFindings(data.findings || []);
       setStatus(data.status || 'Draft');
+      setScanned(false);
     } catch (err) {
       setError(err.message || 'Failed to load draft.');
     } finally {
@@ -62,30 +73,41 @@ export default function DraftEditor() {
   }
 
   async function handleSave() {
+    if (!title.trim() || !text.trim()) {
+      setError('Enter a title and draft content first.');
+      return null;
+    }
+
     try {
       setSaving(true);
       setError('');
       setMessage('');
 
-      const response = await api.updateDraft(id, {
+      const saved = await api.saveDraft({
+        id: draftId || undefined,
         title,
         channel,
         content: text,
       });
+      const savedId = saved?._id || saved?.id || draftId;
+      if (!savedId) {
+        throw new Error('Draft saved, but its ID was not returned.');
+      }
 
-      const saved = response?.draft ?? response?.data ?? response;
-
-      setDraft((previous) => ({
-        ...previous,
+      setDraftId(savedId);
+      setDraft({
         ...saved,
         title,
         channel,
         content: text,
-      }));
+      });
+      setStatus(saved.status || status || 'Draft');
 
-      setMessage('Draft saved successfully.');
+      setMessage('Draft saved.');
+      return { ...saved, id: savedId };
     } catch (err) {
       setError(err.message || 'Failed to save draft.');
+      return null;
     } finally {
       setSaving(false);
     }
@@ -97,9 +119,10 @@ export default function DraftEditor() {
       setError('');
       setMessage('');
 
-      await handleSave();
+      const saved = await handleSave();
+      if (!saved) return;
 
-      const response = await api.scanDraft(id);
+      const response = await api.scanDraft(saved.id, text);
       const data = response?.draft ?? response?.data ?? response;
 
       if (data.findings) {
@@ -110,6 +133,7 @@ export default function DraftEditor() {
         setStatus(data.status);
       }
 
+      setScanned(true);
       setMessage('Draft scan completed.');
     } catch (err) {
       setError(err.message || 'Failed to scan draft.');
@@ -118,40 +142,54 @@ export default function DraftEditor() {
     }
   }
 
-  async function handleDecision(findingId, decision) {
+  async function handleDecision(finding, decision, reason = '') {
     try {
+      if (decision === 'Disputed' && !reason.trim()) {
+        setError('Please enter a reason to dispute this finding.');
+        return;
+      }
+
       setError('');
       setMessage('');
 
-      const response = await api.updateFindingDecision(
-        id,
-        findingId,
-        decision
-      );
-
-      const data = response?.draft ?? response?.data ?? response;
-
-      if (data.findings) {
-        setFindings(data.findings);
-      } else {
-        await loadDraft();
+      const findingIndex = findings.findIndex(item => item === finding);
+      if (findingIndex < 0) {
+        throw new Error('Finding not found.');
       }
 
-      setMessage('Finding decision updated.');
+      await api.updateFinding(
+        draftId,
+        String(findingIndex),
+        decision,
+        reason
+      );
+
+      setFindings(previous => previous.map((item, index) =>
+        index === findingIndex ? { ...item, status: decision, reason } : item
+      ));
+      setMessage(`Finding ${decision.toLowerCase()} successfully.`);
     } catch (err) {
       setError(err.message || 'Failed to update finding decision.');
     }
   }
 
   async function handleSubmit() {
+    if (!scanned) {
+      setError('Run a scan on the latest saved draft before submitting.');
+      return;
+    }
+
+    if (findings.some(finding => !finding.status || finding.status === 'Open')) {
+      setError('Resolve each finding before submitting for approval.');
+      return;
+    }
+
     try {
       setSubmitting(true);
       setError('');
       setMessage('');
 
-      await handleSave();
-
-      const response = await api.submitDraft(id);
+      const response = await api.submitDraft(draftId);
       const data = response?.draft ?? response?.data ?? response;
 
       if (data.status) {
@@ -169,24 +207,26 @@ export default function DraftEditor() {
   }
 
   async function handleReview(decision, comments = '') {
+    if (decision === 'Needs Changes' && !comments.trim()) {
+      setError('Add a comment explaining the requested changes.');
+      return;
+    }
+
     try {
       setSaving(true);
       setError('');
       setMessage('');
 
-      const response = await api.reviewDraft(id, {
-        decision,
-        comments,
-      });
+      await api.reviewDraft(
+        draftId,
+        decision === 'Approved' ? 'approve' : 'request-changes',
+        comments
+      );
 
-      const data = response?.draft ?? response?.data ?? response;
-
-      if (data.status) {
-        setStatus(data.status);
-      }
+      setStatus(decision);
 
       setMessage('Review submitted successfully.');
-      await loadDraft();
+      if (id) await loadDraft();
     } catch (err) {
       setError(err.message || 'Failed to submit review.');
     } finally {
@@ -203,7 +243,7 @@ export default function DraftEditor() {
     );
   }
 
-  if (error && !draft) {
+  if (error && id && !draft) {
     return (
       <section className="surface-card space-y-4 p-6">
         <p className="text-rose-600">{error}</p>
@@ -271,7 +311,10 @@ export default function DraftEditor() {
             id="draft-title"
             type="text"
             value={title}
-            onChange={(event) => setTitle(event.target.value)}
+            onChange={(event) => {
+              setTitle(event.target.value);
+              setScanned(false);
+            }}
             disabled={readOnly}
             required={!readOnly}
             className="input w-full"
@@ -293,7 +336,10 @@ export default function DraftEditor() {
           <select
             id="draft-channel"
             value={channel}
-            onChange={(event) => setChannel(event.target.value)}
+            onChange={(event) => {
+              setChannel(event.target.value);
+              setScanned(false);
+            }}
             disabled={readOnly}
             required={!readOnly}
             className="input w-full"
@@ -321,7 +367,10 @@ export default function DraftEditor() {
 
           <Editor
             value={text}
-            onChange={setText}
+            onChange={(value) => {
+              setText(value);
+              setScanned(false);
+            }}
             readOnly={readOnly}
           />
 
@@ -408,7 +457,7 @@ export default function DraftEditor() {
         )}
       </section>
 
-      {role.toLowerCase() === 'reviewer' &&
+      {canReview &&
         status === 'Pending Approval' && (
           <section className="surface-card space-y-4 p-5 sm:p-7">
             <h2 className="text-xl font-semibold text-slate-900">

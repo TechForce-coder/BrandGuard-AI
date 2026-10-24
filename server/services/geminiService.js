@@ -3,10 +3,6 @@ require("dotenv").config();
 
 const { GoogleGenAI } = require("@google/genai");
 
-const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY
-});
-
 const sleep = (ms) =>
     new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -18,6 +14,10 @@ async function scanContent(content, title = "") {
     if (typeof content !== "string" || !content.trim()) {
         throw new Error("Draft content is empty");
     }
+
+    const ai = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY
+    });
 
     const prompt = `
 You are a brand governance assistant.
@@ -79,8 +79,6 @@ Rules:
     ].filter(Boolean);
 
     let response;
-    let lastError;
-
     for (const model of [...new Set(models)]) {
         for (let attempt = 0; attempt < 2; attempt++) {
             try {
@@ -96,8 +94,6 @@ Rules:
 
                 break;
             } catch (error) {
-                lastError = error;
-
                 const status = Number(
                     error.status ||
                     error.code ||
@@ -132,7 +128,7 @@ Rules:
     }
 
     if (!response) {
-        console.error("All Gemini attempts failed:", lastError?.message);
+        console.error("All Gemini attempts failed");
 
         throw new Error(
             "AI scanning is temporarily unavailable. Your draft is saved. Please try again later."

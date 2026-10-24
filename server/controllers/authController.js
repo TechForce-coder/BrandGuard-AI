@@ -9,10 +9,22 @@ const register = async (req, res) => {
     try {
         const { name, email, password, organisationId } = req.body;
 
-        if (!name || !email || !password || !organisationId) {
+        if (
+            typeof name !== "string" || !name.trim() ||
+            typeof email !== "string" || !email.trim() ||
+            typeof password !== "string" || !password ||
+            typeof organisationId !== "string" || !organisationId
+        ) {
             return res.status(400).json({
                 success: false,
                 message: "Please provide all required fields"
+            });
+        }
+
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+            return res.status(400).json({
+                success: false,
+                message: "Please provide a valid email address"
             });
         }
 
@@ -41,8 +53,9 @@ const register = async (req, res) => {
         }
 
         // Check whether user already exists
+        const normalizedEmail = email.trim().toLowerCase();
         const existingUser = await User.findOne({
-            email: email.toLowerCase()
+            email: normalizedEmail
         });
 
         if (existingUser) {
@@ -56,7 +69,7 @@ const register = async (req, res) => {
 
         const user = await User.create({
             name,
-            email: email.toLowerCase(),
+            email: normalizedEmail,
             password: hashedPassword,
             role: "creator",
             organisationId
@@ -74,8 +87,13 @@ const register = async (req, res) => {
         });
     } catch (error) {
         console.error("Registration error:", error.message);
-        console.error("Registration error:", error.message);
-        
+
+        if (error.code === 11000) {
+            return res.status(409).json({
+                success: false,
+                message: "Email already registered"
+            });
+        }
 
         return res.status(500).json({
             success: false,
@@ -89,7 +107,10 @@ const login = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        if (!email || !password) {
+        if (
+            typeof email !== "string" || !email.trim() ||
+            typeof password !== "string" || !password
+        ) {
             return res.status(400).json({
                 success: false,
                 message: "Email and password are required"
@@ -97,7 +118,7 @@ const login = async (req, res) => {
         }
 
         const user = await User.findOne({
-            email: email.toLowerCase()
+            email: email.trim().toLowerCase()
         });
 
         if (!user) {
@@ -155,8 +176,6 @@ const login = async (req, res) => {
 };
 const getMe = async (req, res) => {
     try {
-        const User = require("../models/User");
-
         const user = await User.findById(req.user.userId)
             .select("-password");
 

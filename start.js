@@ -5,19 +5,15 @@ const { spawn, spawnSync } = require("child_process");
 const rootDir = __dirname;
 const clientDir = path.join(rootDir, "client");
 const serverDir = path.join(rootDir, "server");
+const viteCli = path.join(clientDir, "node_modules", "vite", "bin", "vite.js");
 const serverFile = path.join(serverDir, "server.js");
 
 console.log("\nBuilding BrandGuard AI frontend...\n");
 
-const build = spawnSync(
-    "npm",
-    ["run", "build"],
-    {
-        cwd: clientDir,
-        stdio: "inherit",
-        shell: process.platform === "win32"
-    }
-);
+const build = spawnSync(process.execPath, [viteCli, "build"], {
+    cwd: clientDir,
+    stdio: "inherit"
+});
 
 if (build.error) {
     console.error("Could not start the frontend build:", build.error.message);
@@ -32,18 +28,14 @@ if (build.status !== 0) {
 console.log("\nFrontend build completed.");
 console.log("Starting BrandGuard AI backend...\n");
 
-const server = spawn(
-    process.execPath,
-    [serverFile],
-    {
-        cwd: serverDir,
-        stdio: "inherit",
-        env: {
-            ...process.env,
-            NODE_ENV: "production"
-        }
+const server = spawn(process.execPath, [serverFile], {
+    cwd: serverDir,
+    stdio: "inherit",
+    env: {
+        ...process.env,
+        NODE_ENV: "production"
     }
-);
+});
 
 let shuttingDown = false;
 
