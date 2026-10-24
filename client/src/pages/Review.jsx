@@ -48,15 +48,15 @@ export default function Review({ role }) {
       <div className="grid gap-4 md:grid-cols-3">
         <div className="surface-card p-4">
           <p className="text-[11px] font-semibold uppercase tracking-[.1em] text-slate-500">In queue</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">{drafts.filter(item => item.status === 'Pending Approval').length}</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{loading || error ? '—' : drafts.filter(item => item.status === 'Pending Approval').length}</p>
         </div>
         <div className="surface-card p-4">
           <p className="text-[11px] font-semibold uppercase tracking-[.1em] text-slate-500">Needs changes</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">{drafts.filter(item => item.status === 'Needs Changes').length}</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{loading || error ? '—' : drafts.filter(item => item.status === 'Needs Changes').length}</p>
         </div>
         <div className="surface-card p-4">
           <p className="text-[11px] font-semibold uppercase tracking-[.1em] text-slate-500">Approved</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">{drafts.filter(item => item.status === 'Approved').length}</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{loading || error ? '—' : drafts.filter(item => item.status === 'Approved').length}</p>
         </div>
       </div>
 
@@ -64,7 +64,13 @@ export default function Review({ role }) {
         <div className="flex flex-col justify-between gap-4 border-b border-slate-100 p-5 sm:p-6 lg:flex-row lg:items-center">
           <div>
             <h2 className="text-base font-semibold text-slate-950">Submitted content</h2>
-            <p className="mt-1 text-sm text-slate-500">{loading ? 'Loading submissions…' : `${rows.length} ${rows.length === 1 ? 'item' : 'items'} matching your filters`}</p>
+            <p className="mt-1 text-sm text-slate-500">
+              {loading
+                ? 'Loading submissions…'
+                : error
+                  ? 'Submissions unavailable'
+                  : `${rows.length} ${rows.length === 1 ? 'item' : 'items'} matching your filters`}
+            </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <label className="relative block sm:w-56">

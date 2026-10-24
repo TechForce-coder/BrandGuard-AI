@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity, BookOpen, ClipboardCheck, ClipboardList, FileText, LayoutDashboard,
   LogOut, Menu, Plus, Settings, ShieldCheck, Users, X
@@ -27,6 +27,8 @@ const roleLinks = {
   Admin: [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/drafts', label: 'Content', icon: FileText },
+    { to: '/rulebook', label: 'Guideline Library', icon: BookOpen },
+    { to: '/facts', label: 'Facts', icon: FileText },
     { to: '/audit', label: 'Audit Log', icon: ClipboardList },
     { to: '/settings', label: 'Administration', icon: Settings }
   ]
@@ -42,6 +44,7 @@ const roleDescriptions = {
 export default function Layout({ role, setRole, user, setUser, children, previewMode = false }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const links = roleLinks[role] || roleLinks.Creator;
   const showRoleSwitcher = previewMode || api.isMock;
 
@@ -64,7 +67,7 @@ export default function Layout({ role, setRole, user, setUser, children, preview
         <NavLink
           key={to}
           to={to}
-          end={to === '/'}
+          end={to === '/' || to === '/drafts/new' || (to === '/drafts' && location.pathname === '/drafts/new')}
           onClick={() => setMobileOpen(false)}
           className={({ isActive }) => `nav-pill ${isActive ? 'nav-pill--active' : ''}`}
         >
@@ -153,8 +156,8 @@ export default function Layout({ role, setRole, user, setUser, children, preview
         </div>
       )}
 
-      <div className={`border-b ${previewMode || api.isMock ? 'border-amber-300/20 bg-amber-950 text-amber-50' : 'border-emerald-900/10 bg-emerald-950 text-emerald-50'}`}>
-        <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-4 py-2 sm:px-6 lg:px-8">
+      <div className={`${previewMode || api.isMock ? 'border-b border-amber-200 bg-[#fffdf5] text-amber-950' : 'border-b border-emerald-900/10 bg-emerald-950 text-emerald-50'}`}>
+        <div className={`mx-auto flex max-w-[1500px] items-center justify-between gap-4 ${previewMode || api.isMock ? 'my-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2 sm:px-5' : 'px-4 py-2 sm:px-6 lg:px-8'}`}>
           <p className="flex items-center gap-2 text-xs font-medium">
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${previewMode || api.isMock ? 'bg-amber-300' : 'bg-emerald-300'}`} />
             {previewMode || api.isMock ? (

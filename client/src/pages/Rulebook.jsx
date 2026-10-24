@@ -35,6 +35,12 @@ export default function Rulebook() {
 
       {loading ? (
         <div className="grid gap-4 md:grid-cols-2">{[1, 2, 3].map(item => <div key={item} className="surface-card p-6"><div className="skeleton h-4 w-24" /><div className="skeleton mt-4 h-5 w-48" /><div className="skeleton mt-4 h-16 w-full" /></div>)}</div>
+      ) : error ? (
+        <div className="surface-card px-5 py-14 text-center">
+          <BookOpen className="mx-auto text-slate-300" size={26} />
+          <p className="mt-3 text-sm font-semibold text-slate-800">Guidelines unavailable</p>
+          <p className="mt-1 text-sm text-slate-500">Guidelines could not be loaded.</p>
+        </div>
       ) : rules.length ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {rules.map((rule, index) => (

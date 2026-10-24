@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -22,6 +23,7 @@ export default function DraftEditor({ role }) {
   const [channel, setChannel] = useState('Website');
   const [text, setText] = useState('');
   const [findings, setFindings] = useState([]);
+  const [status, setStatus] = useState('');
   const [scanned, setScanned] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -51,10 +53,23 @@ export default function DraftEditor({ role }) {
         setTitle(d.title || '');
         setChannel(d.channel || 'Website');
         setText(d.content || d.text || '');
-        setFindings([]);
+        setStatus(d.status || '');
+
+        setFindings(
+          Array.isArray(d.findings)
+            ? d.findings.map((finding) => ({
+                ...finding,
+                id: finding.id || finding._id,
+                status: finding.status || 'Open'
+              }))
+            : []
+        );
+
         setScanned(false);
       } catch (e) {
-        if (!cancelled) setError(e.message);
+        if (!cancelled) {
+          setError(e.message || 'Unable to load draft.');
+        }
       }
     };
 
@@ -90,11 +105,12 @@ export default function DraftEditor({ role }) {
       }
 
       setDraftId(actualId);
+      setStatus(saved.status || status);
       setMessage('Draft saved.');
 
       return { ...saved, id: actualId };
     } catch (e) {
-      setError(e.message);
+      setError(e.message || 'Unable to save draft.');
       return null;
     } finally {
       setBusy(false);
@@ -103,6 +119,7 @@ export default function DraftEditor({ role }) {
 
   const scan = async () => {
     const saved = await save();
+
     if (!saved) return;
 
     setBusy(true);
@@ -112,40 +129,33 @@ export default function DraftEditor({ role }) {
     try {
       const result = await api.scanDraft(saved.id);
       const data = result?.data || result;
-
-      const items = Array.isArray(data?.findings)
-        ? data.findings
-        : [];
+      const items = Array.isArray(data?.findings) ? data.findings : [];
 
       setFindings(
-        items.map((f) => ({
-          ...f,
-          id: f.id || f._id,
-          status: f.status || 'Open'
+        items.map((finding) => ({
+          ...finding,
+          id: finding.id || finding._id,
+          status: finding.status || 'Open'
         }))
       );
 
       setScanned(true);
-      setMessage(
-        'Scan complete. Review every finding before submitting.'
-      );
+      setMessage('Scan complete. Review every finding before submitting.');
     } catch (e) {
-      setError(e.message);
+      setError(e.message || 'Unable to scan draft.');
     } finally {
       setBusy(false);
     }
   };
 
-  const decision = async (finding, status, reason) => {
+  const decision = async (finding, nextStatus, reason) => {
     try {
-      if (status === 'Disputed' && !reason?.trim()) {
+      if (nextStatus === 'Disputed' && !reason?.trim()) {
         setError('Please enter a proper reason for dispute.');
         return;
       }
 
-      const findingIndex = findings.findIndex(
-        (f) => f === finding
-      );
+      const findingIndex = findings.findIndex((f) => f === finding);
 
       if (findingIndex === -1) {
         throw new Error('Finding not found.');
@@ -154,44 +164,40 @@ export default function DraftEditor({ role }) {
       const result = await api.updateFinding(
         draftId,
         String(findingIndex),
-        status,
+        nextStatus,
         reason
       );
 
       if (result?.success === false) {
-        throw new Error(
-          result.message || 'Unable to update finding.'
-        );
+        throw new Error(result.message || 'Unable to update finding.');
       }
 
-      setFindings((prev) =>
-        prev.map((f, index) =>
+      setFindings((previous) =>
+        previous.map((f, index) =>
           index === findingIndex
-            ? { ...f, status, reason: reason || '' }
+            ? { ...f, status: nextStatus, reason: reason || '' }
             : f
         )
       );
 
       setError('');
       setMessage(
-        status === 'Disputed'
+        nextStatus === 'Disputed'
           ? 'Finding disputed successfully.'
-          : `Finding ${status.toLowerCase()} successfully.`
+          : `Finding ${nextStatus.toLowerCase()} successfully.`
       );
     } catch (e) {
-      setError(e.message);
+      setError(e.message || 'Unable to update finding.');
     }
   };
 
   const submit = async () => {
     if (!scanned) {
-      setError(
-        'Run a scan on the latest saved draft before submitting.'
-      );
+      setError('Run a scan on the latest saved draft before submitting.');
       return;
     }
 
-    if (findings.some((f) => f.status === 'Open')) {
+    if (findings.some((finding) => finding.status === 'Open')) {
       setError(
         'Resolve each finding with Accept, Reject or Dispute before submitting.'
       );
@@ -200,13 +206,15 @@ export default function DraftEditor({ role }) {
 
     setBusy(true);
     setError('');
+    setMessage('');
 
     try {
       await api.submitDraft(draftId);
+      setStatus('Pending Approval');
       setMessage('Draft submitted for review.');
       setTimeout(() => navigate('/'), 500);
     } catch (e) {
-      setError(e.message);
+      setError(e.message || 'Unable to submit draft.');
     } finally {
       setBusy(false);
     }
@@ -216,13 +224,10 @@ export default function DraftEditor({ role }) {
     let comment = '';
 
     if (action === 'changes') {
-      comment =
-        window.prompt('Explain the changes required:') || '';
+      comment = window.prompt('Explain the changes required:') || '';
 
       if (!comment.trim()) {
-        setError(
-          'A comment is required when requesting changes.'
-        );
+        setError('A comment is required when requesting changes.');
         return;
       }
     }
@@ -236,6 +241,7 @@ export default function DraftEditor({ role }) {
 
     setBusy(true);
     setError('');
+    setMessage('');
 
     try {
       await api.reviewDraft(
@@ -244,15 +250,17 @@ export default function DraftEditor({ role }) {
         comment
       );
 
+      const nextStatus =
+        action === 'approve' ? 'Approved' : 'Needs Changes';
+
+      setStatus(nextStatus);
       setMessage(
-        action === 'approve'
-          ? 'Draft approved.'
-          : 'Changes requested.'
+        action === 'approve' ? 'Draft approved.' : 'Changes requested.'
       );
 
       setTimeout(() => navigate('/review'), 500);
     } catch (e) {
-      setError(e.message);
+      setError(e.message || 'Unable to review draft.');
     } finally {
       setBusy(false);
     }
@@ -283,7 +291,9 @@ export default function DraftEditor({ role }) {
         </div>
 
         {id && (
-          <StatusBadge status={readOnly ? 'Review mode' : 'Draft'} />
+          <StatusBadge
+            status={readOnly && !status ? 'Review mode' : status || 'Draft'}
+          />
         )}
       </div>
 
@@ -326,7 +336,10 @@ export default function DraftEditor({ role }) {
             <select
               className="field mt-2"
               value={channel}
-              onChange={(e) => setChannel(e.target.value)}
+              onChange={(e) => {
+                setChannel(e.target.value);
+                setScanned(false);
+              }}
               disabled={readOnly}
             >
               {[
@@ -349,8 +362,8 @@ export default function DraftEditor({ role }) {
           Draft content
           <Editor
             value={text}
-            onChange={(v) => {
-              setText(v);
+            onChange={(value) => {
+              setText(value);
               setScanned(false);
             }}
             readOnly={readOnly}
@@ -368,9 +381,7 @@ export default function DraftEditor({ role }) {
               className="btn-secondary"
               onClick={save}
             >
-              {busy && (
-                <LoaderCircle size={16} className="animate-spin" />
-              )}
+              {busy && <LoaderCircle size={16} className="animate-spin" />}
               Save draft
             </button>
 

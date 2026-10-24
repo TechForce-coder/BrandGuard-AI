@@ -37,7 +37,13 @@ export default function AuditLog() {
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800"><ShieldCheck size={18} /></span>
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Workspace activity</h2>
-            <p className="mt-0.5 text-xs text-slate-500">{loading ? 'Loading audit events…' : `${logs.length} recorded ${logs.length === 1 ? 'event' : 'events'}`}</p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {loading
+                ? 'Loading audit events…'
+                : error
+                  ? 'Audit events unavailable'
+                  : `${logs.length} recorded ${logs.length === 1 ? 'event' : 'events'}`}
+            </p>
           </div>
         </div>
         {loading ? (
@@ -55,6 +61,12 @@ export default function AuditLog() {
               </li>
             ))}
           </ol>
+        ) : error ? (
+          <div className="px-5 py-14 text-center">
+            <ClipboardList className="mx-auto text-slate-300" size={26} />
+            <p className="mt-3 text-sm font-semibold text-slate-800">Activity unavailable</p>
+            <p className="mt-1 text-sm text-slate-500">Audit events could not be loaded.</p>
+          </div>
         ) : (
           <div className="px-5 py-14 text-center">
             <ClipboardList className="mx-auto text-slate-300" size={26} />
