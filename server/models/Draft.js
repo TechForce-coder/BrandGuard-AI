@@ -23,6 +23,15 @@ const draftSchema = new mongoose.Schema(
             type: Date,
             default: null
         },
+        scanStatus: {
+            type: String,
+            enum: ["not-scanned", "complete", "partial"],
+            default: undefined
+        },
+        scanWarning: {
+            type: String,
+            default: ""
+        },
         channel: {
             type: String,
             default: "Website"
@@ -41,6 +50,20 @@ const draftSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
             required: true
+        },
+        reviewedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null
+        },
+        reviewedAt: {
+            type: Date,
+            default: null
+        },
+        reviewComment: {
+            type: String,
+            trim: true,
+            default: ""
         },
         organisationId: {
             type: mongoose.Schema.Types.ObjectId,

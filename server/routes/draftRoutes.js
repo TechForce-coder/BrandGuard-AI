@@ -8,6 +8,7 @@ const { authorizeRoles } = require("../middleware/authMiddleware");
 const {
     createDraft,
     getDrafts,
+    getCreatorActivity,
     getDraftById,
     updateDraft,
     scanDraft,
@@ -18,6 +19,7 @@ const {
 
 router.post("/", authenticate, authorizeRoles("creator"), createDraft);
 router.get("/", authenticate, authorizeRoles("creator", "reviewer", "manager", "admin"), getDrafts);
+router.get("/activity", authenticate, authorizeRoles("creator"), getCreatorActivity);
 
 router.get("/:id", authenticate, authorizeRoles("creator", "reviewer", "manager", "admin"), getDraftById);
 router.put("/:id", authenticate, authorizeRoles("creator"), updateDraft);

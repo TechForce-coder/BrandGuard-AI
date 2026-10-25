@@ -34,15 +34,15 @@ after(async () => {
     User.findById = originalUserFindById;
 });
 
-const tokenForRole = (role, userId = "test-user") => {
+const tokenForRole = (role, userId = "test-user", organisationId = "test-organisation") => {
     testUsers.set(userId, {
         _id: userId,
-        organisationId: "test-organisation",
+        organisationId,
         role
     });
     return jwt.sign({
         userId,
-        organisationId: "test-organisation",
+        organisationId,
         role
     }, process.env.JWT_SECRET);
 };
@@ -72,6 +72,32 @@ test("health endpoint responds with JSON", async () => {
     assert.equal((await response.json()).success, true);
 });
 
+test("draft list API rejects successful responses with an unexpected shape", async () => {
+    const { api } = await import("../../client/src/api/api.js");
+    const originalFetch = global.fetch;
+    const originalLocalStorage = global.localStorage;
+    global.localStorage = { getItem: () => null };
+    global.fetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true })
+    });
+
+    try {
+        await assert.rejects(
+            api.getDrafts(),
+            /Drafts response was not in the expected format/
+        );
+    } finally {
+        global.fetch = originalFetch;
+        if (originalLocalStorage === undefined) {
+            delete global.localStorage;
+        } else {
+            global.localStorage = originalLocalStorage;
+        }
+    }
+});
+
 test("unknown API routes return JSON 404 instead of the SPA", async () => {
     const response = await fetch(`${baseUrl}/api/not-implemented`, {
         headers: { Accept: "text/html" }
@@ -85,6 +111,9 @@ test("draft, audit, rulebook, and facts routes enforce authentication and role g
     const deniedRequests = [
         ["creator", "POST", "/api/drafts/x/approve"],
         ["creator", "POST", "/api/drafts/x/comments"],
+        ["reviewer", "GET", "/api/drafts/activity"],
+        ["manager", "GET", "/api/drafts/activity"],
+        ["admin", "GET", "/api/drafts/activity"],
         ["creator", "GET", "/api/audit"],
         ["creator", "POST", "/api/rulebook"],
         ["creator", "POST", "/api/facts"],
@@ -253,7 +282,7 @@ test("authorized roles receive organization-scoped submitted drafts and audit hi
             assert.equal(String(draftQuery.organisationId), "test-organisation");
             if (role === "creator") {
                 assert.equal(String(draftQuery.author), "test-user");
-                assert.deepEqual(draftQuery.status.$in, ["Draft", "Needs Changes"]);
+                assert.equal(draftQuery.status, undefined);
             } else {
                 assert.deepEqual(draftQuery.status.$in, ["Pending Approval", "Needs Changes", "Approved"]);
             }
@@ -269,18 +298,23 @@ test("authorized roles receive organization-scoped submitted drafts and audit hi
     });
 });
 
-test("draft detail visibility follows creator ownership and submitted status", async () => {
+test("creator can view owned drafts at every status while other roles retain submission restrictions", async () => {
     let record = { author: "creator-id", status: "Pending Approval" };
     const draftQuery = {
         async populate() { return record; }
     };
     await withStubs([
-        [Draft, { findOne: () => draftQuery }]
+        [Draft, { findOne: () => draftQuery }],
+        [AuditLog, { find: () => ({
+            populate() { return this; },
+            sort() { return this; },
+            async lean() { return []; }
+        }) }]
     ], async () => {
         const creatorPending = await fetch(`${baseUrl}/api/drafts/64f000000000000000000001`, {
             headers: { Authorization: `Bearer ${tokenForRole("creator", "creator-id")}` }
         });
-        assert.equal(creatorPending.status, 404);
+        assert.equal(creatorPending.status, 200);
 
         record = { author: "creator-id", status: "Draft" };
         const creatorOwnDraft = await fetch(`${baseUrl}/api/drafts/64f000000000000000000001`, {
@@ -467,14 +501,44 @@ test("draft lifecycle enforces roles and records workflow history", async () => 
                 };
                 return draft;
             },
-            findOne: () => ({
+            findOne: query => ({
                 populate() { return this; },
-                then(resolve, reject) { return Promise.resolve(draft).then(resolve, reject); }
+                then(resolve, reject) {
+                    const organizationMatches =
+                        !query.organisationId ||
+                        String(query.organisationId) === String(draft.organisationId);
+                    const idMatches = !query._id || String(query._id) === String(draft._id);
+                    const authorMatches =
+                        !query.author || String(query.author) === String(draft.author);
+                    return Promise.resolve(
+                        organizationMatches && idMatches && authorMatches ? draft : null
+                    ).then(resolve, reject);
+                }
+            }),
+            find: query => ({
+                populate() { return this; },
+                sort() { return this; },
+                async lean() {
+                    const statusMatches = !query.status || query.status.$in.includes(draft.status);
+                    const authorMatches = !query.author || String(query.author) === String(draft.author);
+                    const organizationMatches =
+                        String(query.organisationId) === String(draft.organisationId);
+                    return statusMatches && authorMatches && organizationMatches ? [draft] : [];
+                }
             }),
             findOneAndUpdate: async (query, update) => {
+                if (query.organisationId && String(query.organisationId) !== String(draft.organisationId)) return null;
+                if (query._id && String(query._id) !== String(draft._id)) return null;
                 if (query.status && draft.status !== query.status) return null;
-                if (query.author?.$ne === draft.author) return null;
-                Object.assign(draft, update.$set);
+                if (query.author?.$ne && String(query.author.$ne) === String(draft.author)) return null;
+                if (query.author && !query.author.$ne && String(query.author) !== String(draft.author)) return null;
+                if (query.reviewedBy && String(query.reviewedBy) !== String(draft.reviewedBy)) return null;
+                if (query.reviewedAt && query.reviewedAt !== draft.reviewedAt) return null;
+                if (query.reviewComment !== undefined && query.reviewComment !== draft.reviewComment) return null;
+                Object.assign(draft, update.$set || {});
+                for (const field of Object.keys(update.$unset || {})) {
+                    delete draft[field];
+                }
                 return draft;
             }
         }],
@@ -482,7 +546,24 @@ test("draft lifecycle enforces roles and records workflow history", async () => 
             create: async payload => {
                 events.push(payload);
                 return payload;
-            }
+            },
+            find: () => ({
+                populate() { return this; },
+                sort() { return this; },
+                async lean() { return events; }
+            })
+        }],
+        [Fact, {
+            find: () => ({
+                select() { return this; },
+                async lean() { return []; }
+            })
+        }],
+        [RulebookEntry, {
+            find: () => ({
+                select() { return this; },
+                async lean() { return []; }
+            })
         }],
         [geminiService, {
             scanContent: async () => ({
@@ -495,10 +576,10 @@ test("draft lifecycle enforces roles and records workflow history", async () => 
             })
         }]
     ], async () => {
-        const send = (role, endpoint, method, body, userId) => fetch(`${baseUrl}${endpoint}`, {
+        const send = (role, endpoint, method, body, userId, organisationId = "test-organisation") => fetch(`${baseUrl}${endpoint}`, {
             method,
             headers: {
-                Authorization: `Bearer ${tokenForRole(role, userId)}`,
+                Authorization: ["Bearer", tokenForRole(role, userId, organisationId)].join(" "),
                 "Content-Type": "application/json"
             },
             body: body === undefined ? undefined : JSON.stringify(body)
@@ -510,6 +591,27 @@ test("draft lifecycle enforces roles and records workflow history", async () => 
             channel: "Website"
         }, "creator-id");
         assert.equal(created.status, 201);
+
+        const managerCannotSeeUnsubmittedDraft = await send(
+            "manager",
+            "/api/drafts",
+            "GET",
+            undefined,
+            "manager-id"
+        );
+        assert.deepEqual((await managerCannotSeeUnsubmittedDraft.json()).drafts, []);
+
+        const draftOrganization = draft.organisationId;
+        draft.organisationId = "another-organisation";
+        const managerCannotSeeOtherOrganization = await send(
+            "manager",
+            "/api/drafts",
+            "GET",
+            undefined,
+            "manager-id"
+        );
+        assert.deepEqual((await managerCannotSeeOtherOrganization.json()).drafts, []);
+        draft.organisationId = draftOrganization;
 
         const saved = await send("creator", `/api/drafts/${draft._id}`, "PUT", {
             title: "Launch announcement",
@@ -533,19 +635,84 @@ test("draft lifecycle enforces roles and records workflow history", async () => 
         assert.equal(submitted.status, 200);
         assert.equal(draft.status, "Pending Approval");
 
-        const creatorCannotReadSubmitted = await send("creator", `/api/drafts/${draft._id}`, "GET", undefined, "creator-id");
-        assert.equal(creatorCannotReadSubmitted.status, 404);
+        const managerPendingQueue = await send("manager", "/api/drafts", "GET", undefined, "manager-id");
+        const pendingQueueBody = await managerPendingQueue.json();
+        assert.equal(managerPendingQueue.status, 200);
+        assert.equal(pendingQueueBody.drafts.length, 1);
+        assert.equal(pendingQueueBody.drafts[0].status, "Pending Approval");
 
-        const reviewerCanComment = await send("reviewer", `/api/drafts/${draft._id}/comments`, "POST", {
+        const nonManagerCannotApprove = await send(
+            "creator",
+            `/api/drafts/${draft._id}/approve`,
+            "POST",
+            {},
+            "unrelated-creator"
+        );
+        assert.equal(nonManagerCannotApprove.status, 403);
+        assert.equal(draft.status, "Pending Approval");
+
+        const crossOrganizationApproval = await send(
+            "manager",
+            `/api/drafts/${draft._id}/approve`,
+            "POST",
+            {},
+            "foreign-manager",
+            "another-organisation"
+        );
+        assert.equal(crossOrganizationApproval.status, 404);
+        assert.equal(draft.status, "Pending Approval");
+
+        const selfApproval = await send(
+            "manager",
+            `/api/drafts/${draft._id}/approve`,
+            "POST",
+            {},
+            "creator-id"
+        );
+        assert.equal(selfApproval.status, 403);
+        assert.equal(draft.status, "Pending Approval");
+
+        draft.status = "Draft";
+        const staleApproval = await send(
+            "manager",
+            `/api/drafts/${draft._id}/approve`,
+            "POST",
+            {},
+            "manager-id"
+        );
+        assert.equal(staleApproval.status, 400);
+        draft.status = "Pending Approval";
+
+        const creatorCannotReadSubmitted = await send("creator", `/api/drafts/${draft._id}`, "GET", undefined, "creator-id");
+        assert.equal(creatorCannotReadSubmitted.status, 200);
+
+        const reviewerCanComment = await send("manager", `/api/drafts/${draft._id}/comments`, "POST", {
             comment: "Please clarify the evidence."
-        }, "reviewer-id");
+        }, "manager-id");
         assert.equal(reviewerCanComment.status, 201);
 
-        const reviewerRequestsChanges = await send("reviewer", `/api/drafts/${draft._id}/request-changes`, "POST", {
+        const changesWithoutComment = await send(
+            "manager",
+            `/api/drafts/${draft._id}/request-changes`,
+            "POST",
+            {},
+            "manager-id"
+        );
+        assert.equal(changesWithoutComment.status, 400);
+        assert.equal(draft.status, "Pending Approval");
+
+        const reviewerRequestsChanges = await send("manager", `/api/drafts/${draft._id}/request-changes`, "POST", {
             comment: "Please clarify the evidence."
-        }, "reviewer-id");
+        }, "manager-id");
         assert.equal(reviewerRequestsChanges.status, 200);
         assert.equal(draft.status, "Needs Changes");
+        assert.equal(draft.reviewedBy, "manager-id");
+        assert.ok(draft.reviewedAt instanceof Date);
+        assert.equal(draft.reviewComment, "Please clarify the evidence.");
+        const changesRequestedQueue = await send("manager", "/api/drafts", "GET", undefined, "manager-id");
+        const changesRequestedBody = await changesRequestedQueue.json();
+        assert.equal(changesRequestedBody.drafts.length, 1);
+        assert.equal(changesRequestedBody.drafts[0].status, "Needs Changes");
 
         const creatorEditsReturnedDraft = await send("creator", `/api/drafts/${draft._id}`, "PUT", {
             title: "Launch announcement",
@@ -575,6 +742,9 @@ test("draft lifecycle enforces roles and records workflow history", async () => 
         assert.equal(resolved.status, 200);
         const resubmitted = await send("creator", `/api/drafts/${draft._id}/submit`, "POST", {}, "creator-id");
         assert.equal(resubmitted.status, 200);
+        assert.equal(draft.reviewedBy, null);
+        assert.equal(draft.reviewedAt, null);
+        assert.equal(draft.reviewComment, "");
 
         const reviewerCannotEdit = await send("reviewer", `/api/drafts/${draft._id}`, "PUT", {
             title: "Changed by reviewer",
@@ -583,11 +753,39 @@ test("draft lifecycle enforces roles and records workflow history", async () => 
         }, "reviewer-id");
         assert.equal(reviewerCannotEdit.status, 403);
 
-        const approved = await send("reviewer", `/api/drafts/${draft._id}/approve`, "POST", {
+        const approved = await send("manager", `/api/drafts/${draft._id}/approve`, "POST", {
             comment: "Approved."
-        }, "reviewer-id");
+        }, "manager-id");
         assert.equal(approved.status, 200);
         assert.equal(draft.status, "Approved");
+        assert.equal(draft.reviewedBy, "manager-id");
+        assert.ok(draft.reviewedAt instanceof Date);
+        assert.equal(draft.reviewComment, "Approved.");
+        const managerQueueAfterApproval = await send("manager", "/api/drafts", "GET", undefined, "manager-id");
+        const approvedQueueBody = await managerQueueAfterApproval.json();
+        assert.equal(approvedQueueBody.drafts.length, 1);
+        assert.equal(approvedQueueBody.drafts[0].status, "Approved");
+        assert.equal(
+            approvedQueueBody.drafts.filter(item => item.status === "Pending Approval").length,
+            0
+        );
+        const duplicateApproval = await send("manager", `/api/drafts/${draft._id}/approve`, "POST", {}, "manager-id");
+        assert.equal(duplicateApproval.status, 400);
+
+        const creatorDrafts = await send("creator", "/api/drafts", "GET", undefined, "creator-id");
+        const creatorDraftList = await creatorDrafts.json();
+        assert.equal(creatorDraftList.drafts.length, 1);
+        assert.equal(creatorDraftList.drafts[0].status, "Approved");
+
+        const creatorHistory = await send("creator", `/api/drafts/${draft._id}`, "GET", undefined, "creator-id");
+        const creatorHistoryBody = await creatorHistory.json();
+        assert.equal(creatorHistoryBody.draft.status, "Approved");
+        assert.equal(creatorHistoryBody.draft.reviewedBy, "manager-id");
+        assert.ok(creatorHistoryBody.draft.reviewedAt);
+        assert.equal(creatorHistoryBody.draft.reviewComment, "Approved.");
+        assert.equal(creatorHistoryBody.draft.reviewHistory.some(event => event.action === "Approved"), true);
+        assert.equal(creatorHistoryBody.draft.reviewHistory.some(event => event.comment === "Approved."), true);
+        assert.equal(creatorHistoryBody.draft.reviewHistory.some(event => event.user === "manager-id"), true);
     });
 
     assert.deepEqual(events.map(event => event.action), [
@@ -606,6 +804,116 @@ test("draft lifecycle enforces roles and records workflow history", async () => 
         "Submitted",
         "Approved"
     ]);
+});
+
+test("failed review audit persistence rolls the draft status back", async () => {
+    const previousReviewedAt = new Date("2026-01-01T00:00:00.000Z");
+    const draft = {
+        _id: "64f000000000000000000007",
+        author: "creator-id",
+        organisationId: "test-organisation",
+        status: "Pending Approval",
+        reviewedBy: "prior-reviewer",
+        reviewedAt: previousReviewedAt,
+        reviewComment: "Previous decision"
+    };
+    let updateCount = 0;
+
+    await withStubs([
+        [Draft, {
+            findOne: () => ({
+                then(resolve, reject) { return Promise.resolve(draft).then(resolve, reject); }
+            }),
+            findOneAndUpdate: async (query, update) => {
+                updateCount += 1;
+                if (query.status !== draft.status) return null;
+                if (query.reviewedBy && String(query.reviewedBy) !== String(draft.reviewedBy)) return null;
+                if (query.reviewedAt && query.reviewedAt !== draft.reviewedAt) return null;
+                if (query.reviewComment !== undefined && query.reviewComment !== draft.reviewComment) return null;
+                Object.assign(draft, update.$set || {});
+                for (const field of Object.keys(update.$unset || {})) delete draft[field];
+                return draft;
+            }
+        }],
+        [AuditLog, {
+            create: async () => { throw new Error("audit store unavailable"); }
+        }]
+    ], async () => {
+        const response = await fetch(`${baseUrl}/api/drafts/${draft._id}/approve`, {
+            method: "POST",
+            headers: {
+                Authorization: ["Bearer", tokenForRole("manager", "manager-id")].join(" "),
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ comment: "Approved." })
+        });
+        const body = await response.json();
+
+        assert.equal(response.status, 503, JSON.stringify(body));
+        assert.equal(body.success, false);
+        assert.match(body.message, /audit history could not be recorded/);
+        assert.equal(draft.status, "Pending Approval");
+        assert.equal(draft.reviewedBy, "prior-reviewer");
+        assert.equal(draft.reviewedAt, previousReviewedAt);
+        assert.equal(draft.reviewComment, "Previous decision");
+    });
+
+    assert.equal(updateCount, 2);
+});
+
+test("failed audit rollback does not overwrite a newer concurrent review", async () => {
+    const draft = {
+        _id: "64f000000000000000000008",
+        author: "creator-id",
+        organisationId: "test-organisation",
+        status: "Pending Approval"
+    };
+    let updateCount = 0;
+
+    await withStubs([
+        [Draft, {
+            findOne: () => ({
+                then(resolve, reject) { return Promise.resolve(draft).then(resolve, reject); }
+            }),
+            findOneAndUpdate: async (query, update) => {
+                updateCount += 1;
+                if (query.status !== draft.status) return null;
+                if (query.reviewedBy && String(query.reviewedBy) !== String(draft.reviewedBy)) return null;
+                if (query.reviewedAt && query.reviewedAt !== draft.reviewedAt) return null;
+                if (query.reviewComment !== undefined && query.reviewComment !== draft.reviewComment) return null;
+                Object.assign(draft, update.$set || {});
+                for (const field of Object.keys(update.$unset || {})) delete draft[field];
+                return draft;
+            }
+        }],
+        [AuditLog, {
+            create: async () => {
+                draft.reviewedBy = "newer-reviewer";
+                draft.reviewedAt = new Date("2026-10-25T00:00:00.000Z");
+                draft.reviewComment = "Newer review";
+                throw new Error("audit store unavailable");
+            }
+        }]
+    ], async () => {
+        const response = await fetch(`${baseUrl}/api/drafts/${draft._id}/approve`, {
+            method: "POST",
+            headers: {
+                Authorization: ["Bearer", tokenForRole("manager", "manager-id")].join(" "),
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ comment: "Approved." })
+        });
+        const body = await response.json();
+
+        assert.equal(response.status, 500);
+        assert.equal(body.success, false);
+        assert.match(body.message, /Reload the draft to verify its status/);
+        assert.equal(draft.status, "Approved");
+        assert.equal(draft.reviewedBy, "newer-reviewer");
+        assert.equal(draft.reviewComment, "Newer review");
+    });
+
+    assert.equal(updateCount, 2);
 });
 
 test("failed scans remain failures and are recorded without persisting fake results", async () => {
@@ -629,6 +937,18 @@ test("failed scans remain failures and are recorded without persisting fake resu
         [AuditLog, {
             create: async payload => { events.push(payload); return payload; }
         }],
+        [Fact, {
+            find: () => ({
+                select() { return this; },
+                async lean() { return []; }
+            })
+        }],
+        [RulebookEntry, {
+            find: () => ({
+                select() { return this; },
+                async lean() { return []; }
+            })
+        }],
         [geminiService, {
             scanContent: async () => { throw new Error("AI provider unavailable"); }
         }]
@@ -641,11 +961,101 @@ test("failed scans remain failures and are recorded without persisting fake resu
             },
             body: JSON.stringify({})
         });
+
         assert.equal(response.status, 500);
         assert.equal((await response.json()).message, "Unable to scan content. Check the Gemini API configuration.");
         assert.equal(scanDraft.findings.length, 0);
     });
     assert.deepEqual(events.map(event => event.action), ["Scan Failed"]);
+});
+
+test("scan loads scoped active facts and rules, persists partial status, and refuses partial submissions", async () => {
+    const draft = {
+        _id: "64f000000000000000000006",
+        author: "creator-id",
+        organisationId: "test-organisation",
+        title: "Scoped scan",
+        content: "Test content",
+        status: "Draft",
+        findings: [],
+        scannedAt: null,
+        async save() { return this; }
+    };
+    let factQuery;
+    let ruleQuery;
+    let scanContext;
+    const auditEvents = [];
+    await withStubs([
+        [Draft, {
+            findOne: () => ({
+                then(resolve, reject) { return Promise.resolve(draft).then(resolve, reject); }
+            })
+        }],
+        [Fact, {
+            find: query => {
+                factQuery = query;
+                return {
+                    select() { return this; },
+                    async lean() { return [{ _id: "scoped-fact", title: "Approved fact", organisationId: "test-organisation" }]; }
+                };
+            }
+        }],
+        [RulebookEntry, {
+            find: query => {
+                ruleQuery = query;
+                return {
+                    select() { return this; },
+                    async lean() { return [{ _id: "scoped-rule", title: "Guideline", description: "Must not contain: prohibited", organisationId: "test-organisation" }]; }
+                };
+            }
+        }],
+        [AuditLog, {
+            create: async payload => { auditEvents.push(payload); return payload; }
+        }],
+        [geminiService, {
+            scanContent: async (content, title, context) => {
+                scanContext = context;
+                return {
+                    findings: [],
+                    summary: { total: 0 },
+                    scanStatus: "partial",
+                    warning: "Provider unavailable; deterministic checks only."
+                };
+            }
+        }]
+    ], async () => {
+        const response = await fetch(`${baseUrl}/api/drafts/${draft._id}/scan`, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${tokenForRole("creator", "creator-id")}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({})
+        });
+        const result = await response.json();
+        assert.equal(response.status, 200, JSON.stringify(result));
+        assert.equal(result.scanStatus, "partial");
+        assert.match(result.warning, /Provider unavailable/);
+        assert.equal(draft.scanStatus, "partial");
+        assert.equal(String(factQuery.organisationId), "test-organisation");
+        assert.deepEqual(factQuery.status.$in, ["Active", "Valid"]);
+        assert.equal(String(ruleQuery.organisationId), "test-organisation");
+        assert.equal(ruleQuery.status, "Active");
+        assert.equal(scanContext.facts[0].title, "Approved fact");
+        assert.equal(scanContext.rules[0].title, "Guideline");
+
+        const submit = await fetch(`${baseUrl}/api/drafts/${draft._id}/submit`, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${tokenForRole("creator", "creator-id")}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({})
+        });
+        assert.equal(submit.status, 400);
+        assert.match((await submit.json()).message, /complete AI scan/);
+    });
+    assert.deepEqual(auditEvents.map(event => event.action), ["Scan Partial"]);
 });
 
 test("draft actions require a valid token and the correct role", async () => {
@@ -745,8 +1155,7 @@ test("Gemini scan configures its request timeout and rejects malformed provider 
     process.env.GEMINI_API_KEY = "test-only-key";
     let configuredTimeout;
     try {
-        await assert.rejects(
-            geminiService.scanContent("Synthetic content for timeout validation", "Test", (apiKey, timeoutMs) => {
+        const result = await geminiService.scanContent("Synthetic content for timeout validation", "Test", (apiKey, timeoutMs) => {
                 assert.equal(apiKey, "test-only-key");
                 configuredTimeout = timeoutMs;
                 return {
@@ -754,10 +1163,10 @@ test("Gemini scan configures its request timeout and rejects malformed provider 
                         generateContent: async () => ({ text: "{" })
                     }
                 };
-            }),
-            /Gemini returned invalid JSON/
-        );
+            });
         assert.equal(configuredTimeout, 30000);
+        assert.equal(result.scanStatus, "partial");
+        assert.match(result.warning, /unusable results/);
     } finally {
         if (originalApiKey === undefined) delete process.env.GEMINI_API_KEY;
         else process.env.GEMINI_API_KEY = originalApiKey;
@@ -769,18 +1178,17 @@ test("Gemini provider failures remain explicit and do not become clean scan resu
     process.env.GEMINI_API_KEY = "test-only-key";
     let requestCount = 0;
     try {
-        await assert.rejects(
-            geminiService.scanContent("Synthetic content for provider failure validation", "Test", () => ({
+        const result = await geminiService.scanContent("Synthetic content for provider failure validation", "Test", () => ({
                 models: {
                     generateContent: async () => {
                         requestCount += 1;
                         throw Object.assign(new Error("Synthetic provider failure"), { status: 400 });
                     }
                 }
-            })),
-            /Gemini request failed/
-        );
+            }));
         assert.equal(requestCount, 1);
+        assert.equal(result.scanStatus, "partial");
+        assert.match(result.warning, /Gemini request failed/);
     } finally {
         if (originalApiKey === undefined) delete process.env.GEMINI_API_KEY;
         else process.env.GEMINI_API_KEY = originalApiKey;

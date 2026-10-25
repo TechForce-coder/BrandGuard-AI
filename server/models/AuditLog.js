@@ -26,6 +26,7 @@ const auditLogSchema = new mongoose.Schema(
                 "Created",
                 "Updated",
                 "Scan Completed",
+                "Scan Partial",
                 "Scan Failed",
                 "Finding Accepted",
                 "Finding Rejected",
