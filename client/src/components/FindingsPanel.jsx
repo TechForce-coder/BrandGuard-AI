@@ -31,7 +31,17 @@ export default function FindingsPanel({ findings = [], onDecision, readOnly = fa
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[.08em] text-slate-500">
-            <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-700">Review item</span>
+            <span className={`rounded-full px-2 py-1 ${
+              f.source === 'rule' || f.source === 'fact'
+                ? 'bg-blue-50 text-blue-800'
+                : 'bg-amber-50 text-amber-700'
+            }`}>
+              {f.source === 'rule'
+                ? 'Deterministic · Rulebook'
+                : f.source === 'fact'
+                  ? 'Deterministic · Approved fact'
+                  : 'AI review item'}
+            </span>
             {typeof f.confidence === 'number' && (
               <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">Confidence {Math.round(f.confidence * 100)}%</span>
             )}

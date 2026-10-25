@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, ClipboardCheck, Search } from 'lucide-react';
+import { ArrowRight, CheckCircle2, ClipboardCheck, RotateCcw, Search } from 'lucide-react';
 import { api } from '../api/api.js';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { formatDateTime } from '../utils/formatDateTime.js';
+import { getReviewQueueActions, submitReviewQueueAction } from '../utils/reviewQueueWorkflow.js';
 
 const filters = ['Pending Approval', 'Needs Changes', 'Approved', 'All'];
 
@@ -14,6 +15,9 @@ export default function Review({ role }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [reviewingId, setReviewingId] = useState('');
+  const [comments, setComments] = useState({});
+  const [message, setMessage] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -32,6 +36,30 @@ export default function Review({ role }) {
     `${draft.title || ''} ${draft.author || ''} ${draft.id || ''}`.toLowerCase().includes(search.toLowerCase())
   ), [drafts, filter, search]);
 
+  async function handleReview(draft, action) {
+    try {
+      setReviewingId(draft.id);
+      setError('');
+      setMessage('');
+      await submitReviewQueueAction(
+        api,
+        role,
+        draft,
+        action,
+        comments[draft.id] || ''
+      );
+      setComments(previous => ({ ...previous, [draft.id]: '' }));
+      setMessage(action === 'approve'
+        ? `"${draft.title}" approved successfully.`
+        : `Changes requested for "${draft.title}".`);
+      setRefreshKey(key => key + 1);
+    } catch (reason) {
+      setError(reason.message || 'Unable to submit the review decision.');
+    } finally {
+      setReviewingId('');
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -45,6 +73,7 @@ export default function Review({ role }) {
           <button type="button" className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs" onClick={() => setRefreshKey(key => key + 1)}>Retry</button>
         </div>
       )}
+      {message && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{message}</p>}
 
       <div className="grid gap-4 md:grid-cols-3">
         <div className="surface-card p-4">
@@ -88,7 +117,7 @@ export default function Review({ role }) {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[650px] text-left text-sm">
             <thead className="bg-slate-50/80 text-[11px] uppercase tracking-[.08em] text-slate-500">
-              <tr>{['Content', 'Author', 'Status', 'Updated', ''].map((heading, index) => <th key={`${heading}-${index}`} className="px-5 py-3.5 font-semibold">{heading}</th>)}</tr>
+              <tr>{['Content', 'Author', 'Status', 'Updated', 'Actions'].map(heading => <th key={heading} className="px-5 py-3.5 font-semibold">{heading}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map(draft => (
@@ -100,10 +129,42 @@ export default function Review({ role }) {
                   <td className="px-5 py-4 text-slate-600">{draft.author || '—'}</td>
                   <td className="px-5 py-4"><StatusBadge status={draft.status} /></td>
                   <td className="whitespace-nowrap px-5 py-4 text-xs text-slate-500">
-                    <time dateTime={draft.updated || undefined}>{formatDateTime(draft.updated)}</time>
+                    <time dateTime={draft.submittedAt || draft.updated || undefined}>{formatDateTime(draft.submittedAt || draft.updated)}</time>
                   </td>
-                  <td className="px-5 py-4">
-                    <button className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs" onClick={() => navigate(`/drafts/${draft.id}`)}>Review <ArrowRight size={14} /></button>
+                  <td className="min-w-64 px-5 py-4">
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs" onClick={() => navigate(`/drafts/${draft.id}`)}>Open draft <ArrowRight size={14} /></button>
+                      {getReviewQueueActions(role, draft).map(({ action, label }) => (
+                        <button
+                          key={action}
+                          type="button"
+                          className={action === 'approve'
+                            ? 'btn-primary !min-h-8 !px-3 !py-1.5 !text-xs'
+                            : 'btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs'}
+                          disabled={reviewingId === draft.id}
+                          onClick={() => handleReview(draft, action)}
+                        >
+                          {action === 'approve' ? <CheckCircle2 size={14} /> : <RotateCcw size={14} />}
+                          {reviewingId === draft.id ? 'Saving…' : label}
+                        </button>
+                      ))}
+                    </div>
+                    {draft.status === 'Pending Approval' && getReviewQueueActions(role, draft).length > 0 && (
+                      <label className="mt-2 block">
+                        <span className="sr-only">Review comment for {draft.title}</span>
+                        <textarea
+                          className="field min-h-16 w-full !py-2 text-xs"
+                          value={comments[draft.id] || ''}
+                          onChange={event => setComments(previous => ({
+                            ...previous,
+                            [draft.id]: event.target.value
+                          }))}
+                          placeholder="Comment required to request changes"
+                          aria-label={`Review comment for ${draft.title}`}
+                          disabled={reviewingId === draft.id}
+                        />
+                      </label>
+                    )}
                   </td>
                 </tr>
               ))}

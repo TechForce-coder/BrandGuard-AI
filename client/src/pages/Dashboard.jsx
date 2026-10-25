@@ -60,7 +60,7 @@ const roleActions = {
 
 export default function Dashboard({ role, showDrafts = false }) {
   const [drafts, setDrafts] = useState([]);
-  const [filter, setFilter] = useState('All');
+  const [filter, setFilter] = useState(['Manager', 'Reviewer'].includes(role) ? 'Pending Approval' : 'All');
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -120,10 +120,14 @@ export default function Dashboard({ role, showDrafts = false }) {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [role]);
 
   useEffect(() => {
-    if (!['Manager', 'Admin'].includes(role)) {
+    setFilter(['Manager', 'Reviewer'].includes(role) ? 'Pending Approval' : 'All');
+  }, [role]);
+
+  useEffect(() => {
+    if (!['Creator', 'Reviewer', 'Manager', 'Admin'].includes(role)) {
       setActivity([]);
       setActivityError('');
       setActivityLoading(false);
@@ -134,7 +138,7 @@ export default function Dashboard({ role, showDrafts = false }) {
     setActivityLoading(true);
     setActivityError('');
 
-    api.getAudit()
+    (role === 'Creator' ? api.getDraftActivity() : api.getAudit())
       .then(result => {
         if (!active) return;
         const items = Array.isArray(result) ? result : result?.logs || [];
@@ -467,12 +471,12 @@ const visible = useMemo(() => {
                 <div>
                   <h2 className="text-lg font-bold text-slate-950">Recent activity</h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    {['Manager', 'Admin'].includes(role)
-                      ? 'Latest recorded workspace events.'
-                      : 'Audit events are available to governance roles.'}
+                    {role === 'Creator'
+                      ? 'Recent decisions on your submitted content.'
+                      : 'Latest recorded workspace events.'}
                   </p>
                 </div>
-                {['Manager', 'Admin'].includes(role) && (
+                {['Reviewer', 'Manager', 'Admin'].includes(role) && (
                   <button
                     type="button"
                     className="shrink-0 text-xs font-semibold text-blue-800 transition hover:text-blue-950"
@@ -506,11 +510,6 @@ const visible = useMemo(() => {
                   Retry
                 </button>
               </div>
-            ) : !['Manager', 'Admin'].includes(role) ? (
-              <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-center">
-                <ShieldCheck className="mx-auto text-slate-400" size={20} aria-hidden="true" />
-                <p className="mt-2 text-xs leading-5 text-slate-500">Audit events are restricted to governance roles.</p>
-              </div>
             ) : activity.length ? (
               <ol className="mt-4 divide-y divide-slate-100">
                 {activity.map((item, index) => (
@@ -521,7 +520,7 @@ const visible = useMemo(() => {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold text-slate-800">{item.action || item.event || 'Workflow event'}</p>
                       <p className="mt-0.5 truncate text-xs text-slate-500">
-                        {item.item || item.resource || 'Workspace'} <span className="text-slate-300">·</span> {item.actor || item.user || 'System'}
+                        {item.item || item.draft?.title || item.resource || 'Workspace'} <span className="text-slate-300">·</span> {item.actor || item.user?.name || item.user?.email || item.user || 'System'}
                       </p>
                     </div>
                     <time

@@ -60,8 +60,16 @@ export const api = {
 
   async getDrafts() {
     const result = await request('/drafts');
-    const drafts = Array.isArray(result) ? result : result?.drafts || [];
+    const drafts = Array.isArray(result) ? result : result?.drafts;
+    if (!Array.isArray(drafts)) {
+      throw new Error('Drafts response was not in the expected format');
+    }
     return drafts.map(normalizeDraft);
+  },
+
+  async getDraftActivity() {
+    const result = await request('/drafts/activity');
+    return Array.isArray(result?.activity) ? result.activity : [];
   },
 
   async getDraft(id) {
@@ -110,11 +118,23 @@ export const api = {
   },
 
   async reviewDraft(id, action, comment = '') {
-    const endpoint = action === 'approve' ? 'approve' : 'request-changes';
-    return request(`/drafts/${encodeURIComponent(id)}/${endpoint}`, {
+    const reviewActions = {
+      approve: { endpoint: 'approve', status: 'Approved' },
+      'request-changes': { endpoint: 'request-changes', status: 'Needs Changes' }
+    };
+    const review = reviewActions[action];
+    if (!review) {
+      throw new Error('Invalid review action');
+    }
+
+    const result = await request(`/drafts/${encodeURIComponent(id)}/${review.endpoint}`, {
       method: 'POST',
       body: JSON.stringify({ comment })
     });
+    if (result?.success !== true || result?.draft?.status !== review.status) {
+      throw new Error(result?.message || 'The review response did not confirm the requested status.');
+    }
+    return result;
   },
 
   async addDraftComment(id, comment) {

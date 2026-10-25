@@ -12,6 +12,7 @@ import { api } from '../api/api.js';
 import Editor from '../components/Editor.jsx';
 import FindingsPanel from '../components/FindingsPanel.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
+import { getDraftEditorState, submitReviewComment } from '../utils/draftEditorWorkflow.js';
 
 export default function DraftEditor({ actualRole }) {
   const { id } = useParams();
@@ -23,12 +24,15 @@ export default function DraftEditor({ actualRole }) {
   const [channel, setChannel] = useState('');
   const [text, setText] = useState('');
   const [findings, setFindings] = useState([]);
+  const [reviewHistory, setReviewHistory] = useState([]);
   const [status, setStatus] = useState('Draft');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [scanned, setScanned] = useState(false);
+  const [scanStatus, setScanStatus] = useState('not-scanned');
+  const [scanWarning, setScanWarning] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
@@ -56,15 +60,19 @@ export default function DraftEditor({ actualRole }) {
 
       const response = await api.getDraft(id);
       const data = response?.draft ?? response?.data ?? response;
+      const editorState = getDraftEditorState(data, { id });
 
       setDraft(data);
-      setDraftId(data._id || data.id || id);
-      setTitle(data.title || '');
-      setChannel(data.channel || '');
-      setText(data.content || '');
-      setFindings(data.findings || []);
-      setStatus(data.status || 'Draft');
-      setScanned(Boolean(data.scannedAt));
+      setDraftId(editorState.id);
+      setTitle(editorState.title);
+      setChannel(editorState.channel);
+      setText(editorState.content);
+      setFindings(editorState.findings);
+      setReviewHistory(editorState.reviewHistory);
+      setStatus(editorState.status);
+      setScanned(editorState.scanned);
+      setScanStatus(editorState.scanStatus);
+      setScanWarning(editorState.scanWarning);
     } catch (err) {
       setError(err.message || 'Failed to load draft.');
     } finally {
@@ -89,7 +97,19 @@ export default function DraftEditor({ actualRole }) {
         channel,
         content: text,
       });
-      const savedId = saved?._id || saved?.id || draftId;
+      const editorState = getDraftEditorState(saved, {
+        id: draftId,
+        title,
+        channel,
+        content: text,
+        findings,
+        status,
+        scanned,
+        scanStatus,
+        scanWarning,
+        reviewHistory
+      });
+      const savedId = editorState.id;
       if (!savedId) {
         throw new Error('Draft saved, but its ID was not returned.');
       }
@@ -97,16 +117,22 @@ export default function DraftEditor({ actualRole }) {
       setDraftId(savedId);
       setDraft({
         ...saved,
-        title,
-        channel,
-        content: text,
+        title: editorState.title,
+        channel: editorState.channel,
+        content: editorState.content,
       });
-      setStatus(saved.status || status || 'Draft');
-      setFindings(Array.isArray(saved.findings) ? saved.findings : []);
-      setScanned(Boolean(saved.scannedAt));
+      setTitle(editorState.title);
+      setChannel(editorState.channel);
+      setText(editorState.content);
+      setStatus(editorState.status);
+      setFindings(editorState.findings);
+      setReviewHistory(editorState.reviewHistory);
+      setScanned(editorState.scanned);
+      setScanStatus(editorState.scanStatus);
+      setScanWarning(editorState.scanWarning);
 
       setMessage('Draft saved.');
-      return { ...saved, id: savedId };
+      return { ...saved, id: savedId, ...editorState };
     } catch (err) {
       setError(err.message || 'Failed to save draft.');
       return null;
@@ -126,17 +152,23 @@ export default function DraftEditor({ actualRole }) {
 
       const response = await api.scanDraft(saved.id, text);
       const data = response?.draft ?? response?.data ?? response;
+      const nextFindings = Array.isArray(data.findings) ? data.findings : [];
+      const nextScanStatus = data.scanStatus || 'complete';
 
-      if (data.findings) {
-        setFindings(data.findings);
+      if (Array.isArray(data.findings)) {
+        setFindings(nextFindings);
       }
 
       if (data.status) {
         setStatus(data.status);
       }
 
-      setScanned(true);
-      setMessage('Draft scan completed.');
+      setScanStatus(nextScanStatus);
+      setScanWarning(data.warning || data.scanWarning || '');
+      setScanned(nextScanStatus === 'complete');
+      setMessage(nextScanStatus === 'partial'
+        ? 'Scan incomplete. Resolve the provider issue and run a complete scan before submitting.'
+        : 'Draft scan completed.');
     } catch (err) {
       setError(err.message || 'Failed to scan draft.');
     } finally {
@@ -209,15 +241,12 @@ export default function DraftEditor({ actualRole }) {
   }
 
   async function handleComment(comment = '') {
-    if (!comment.trim()) {
-      setError('Enter a comment before recording it.');
-      return;
-    }
     try {
       setSaving(true);
       setError('');
       setMessage('');
-      await api.addDraftComment(draftId, comment);
+      await submitReviewComment(api, draftId, comment);
+      await loadDraft();
       setMessage('Review comment recorded.');
     } catch (err) {
       setError(err.message || 'Failed to record review comment.');
@@ -245,7 +274,9 @@ export default function DraftEditor({ actualRole }) {
 
       setStatus(decision);
 
-      setMessage('Review submitted successfully.');
+      setMessage(decision === 'Approved'
+        ? 'Draft approved successfully.'
+        : 'Changes requested successfully.');
       if (id) await loadDraft();
     } catch (err) {
       setError(err.message || 'Failed to submit review.');
@@ -301,6 +332,13 @@ export default function DraftEditor({ actualRole }) {
             </p>
           </div>
 
+          {scanStatus === 'partial' && (
+            <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <p className="font-semibold">Scan incomplete</p>
+              <p className="mt-1">{scanWarning || 'Only supported deterministic checks ran. A complete AI scan is required before submission.'}</p>
+            </div>
+          )}
+
           <StatusBadge status={status} />
         </div>
 
@@ -334,6 +372,8 @@ export default function DraftEditor({ actualRole }) {
             onChange={(event) => {
               setTitle(event.target.value);
               setScanned(false);
+              setScanStatus('not-scanned');
+              setScanWarning('');
             }}
             disabled={readOnly}
             required={!readOnly}
@@ -359,6 +399,8 @@ export default function DraftEditor({ actualRole }) {
             onChange={(event) => {
               setChannel(event.target.value);
               setScanned(false);
+              setScanStatus('not-scanned');
+              setScanWarning('');
             }}
             disabled={readOnly}
             required={!readOnly}
@@ -390,6 +432,8 @@ export default function DraftEditor({ actualRole }) {
             onChange={(value) => {
               setText(value);
               setScanned(false);
+              setScanStatus('not-scanned');
+              setScanWarning('');
             }}
             readOnly={readOnly}
           />
@@ -447,6 +491,31 @@ export default function DraftEditor({ actualRole }) {
           </div>
         )}
       </section>
+
+      {reviewHistory.length > 0 && (
+        <section className="surface-card space-y-4 p-5 sm:p-7">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">Review history</h2>
+            <p className="mt-1 text-sm text-slate-500">Persisted workflow decisions and comments.</p>
+          </div>
+          <ol className="space-y-3">
+            {reviewHistory.map((item, index) => (
+              <li key={item._id || item.id || `${item.action}-${item.createdAt}-${index}`} className="rounded-lg border border-slate-200 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-semibold text-slate-800">{item.action}</p>
+                  <time className="text-xs text-slate-500" dateTime={item.createdAt || undefined}>
+                    {item.createdAt ? new Date(item.createdAt).toLocaleString() : ''}
+                  </time>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  {item.user?.name || item.user?.email || 'Workspace reviewer'}
+                </p>
+                {item.comment && <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{item.comment}</p>}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       <section className="surface-card space-y-4 p-5 sm:p-7">
         <div>
