@@ -5,7 +5,7 @@ const auditLogSchema = new mongoose.Schema(
         draft: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Draft",
-            required: true
+            required: false
         },
 
         user: {
@@ -23,9 +23,23 @@ const auditLogSchema = new mongoose.Schema(
         action: {
             type: String,
             enum: [
+                "Created",
+                "Updated",
+                "Scan Completed",
+                "Scan Failed",
+                "Finding Accepted",
+                "Finding Rejected",
+                "Finding Disputed",
                 "Submitted",
+                "Commented",
                 "Approved",
-                "Changes Requested"
+                "Changes Requested",
+                "Rule Created",
+                "Rule Updated",
+                "Rule Deleted",
+                "Fact Created",
+                "Fact Updated",
+                "Fact Deleted"
             ],
             required: true
         },
@@ -43,6 +57,28 @@ const auditLogSchema = new mongoose.Schema(
 
         newStatus: {
             type: String,
+            default: ""
+        },
+
+        metadata: {
+            type: mongoose.Schema.Types.Mixed,
+            default: undefined
+        },
+
+        resourceType: {
+            type: String,
+            enum: ["draft", "rule", "fact"],
+            default: "draft"
+        },
+
+        resourceId: {
+            type: mongoose.Schema.Types.ObjectId,
+            default: undefined
+        },
+
+        resourceName: {
+            type: String,
+            trim: true,
             default: ""
         }
     },

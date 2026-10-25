@@ -1,7 +1,16 @@
 
 const Draft = require("../models/Draft");
-const { scanContent } = require("../services/geminiService");
-const AuditLog = require("../models/AuditLog");
+const geminiService = require("../services/geminiService");
+const { recordAudit } = require("../services/auditService");
+
+const allowedChannels = new Set([
+    "Website",
+    "Social Media",
+    "Email",
+    "Blog",
+    "Advertisement",
+    "Other"
+]);
 
 // Create a new draft
 const createDraft = async (req, res) => {
@@ -21,6 +30,12 @@ const createDraft = async (req, res) => {
                 message: "Draft content must be a string"
             });
         }
+        if (channel !== undefined && (typeof channel !== "string" || !allowedChannels.has(channel))) {
+            return res.status(400).json({
+                success: false,
+                message: "Select a supported content channel"
+            });
+        }
 
         const draft = await Draft.create({
             title: title.trim(),
@@ -28,6 +43,14 @@ const createDraft = async (req, res) => {
             channel: channel || "Website",
             author: req.user.userId,
             organisationId: req.user.organisationId
+        });
+
+        await recordAudit({
+            draft: draft._id,
+            user: req.user.userId,
+            organisationId: req.user.organisationId,
+            action: "Created",
+            newStatus: draft.status
         });
 
         return res.status(201).json({
@@ -48,13 +71,22 @@ const createDraft = async (req, res) => {
 
 const getDrafts = async (req, res) => {
     try {
+        const role = String(req.user.role || "").toLowerCase();
+        if (!["creator", "reviewer", "manager", "admin"].includes(role)) {
+            return res.status(403).json({
+                success: false,
+                message: "You do not have permission to view drafts"
+            });
+        }
+
         const query = {
             organisationId: req.user.organisationId
         };
-        if (String(req.user.role).toLowerCase() === "creator") {
+        if (role === "creator") {
             query.author = req.user.userId;
-        } else if (String(req.user.role).toLowerCase() === "reviewer") {
-            query.status = { $ne: "Draft" };
+            query.status = { $in: ["Draft", "Needs Changes"] };
+        } else {
+            query.status = { $in: ["Pending Approval", "Needs Changes", "Approved"] };
         }
 
         const drafts = await Draft.find(query)
@@ -109,12 +141,15 @@ const getDraftById = async (req, res) => {
             });
         }
 
-        if (
-            (String(req.user.role).toLowerCase() === "creator" &&
-                String(draft.author?._id || draft.author) !== String(req.user.userId)) ||
-            (String(req.user.role).toLowerCase() === "reviewer" &&
-                draft.status === "Draft")
-        ) {
+        const role = String(req.user.role || "").toLowerCase();
+        const isCreator = role === "creator";
+        const isAuthor = String(draft.author?._id || draft.author) === String(req.user.userId);
+        const isEditableCreatorDraft = isCreator && isAuthor &&
+            ["Draft", "Needs Changes"].includes(draft.status);
+        const isSubmittedForReview = ["reviewer", "manager", "admin"].includes(role) &&
+            ["Pending Approval", "Needs Changes", "Approved"].includes(draft.status);
+
+        if (!isEditableCreatorDraft && !isSubmittedForReview) {
             return res.status(404).json({
                 success: false,
                 message: "Draft not found"
@@ -149,10 +184,16 @@ const updateDraft = async (req, res) => {
             });
         }
 
-        if (content !== undefined && typeof content !== "string") {
+        if (typeof content !== "string") {
             return res.status(400).json({
                 success: false,
                 message: "Draft content must be a string"
+            });
+        }
+        if (channel !== undefined && (typeof channel !== "string" || !allowedChannels.has(channel))) {
+            return res.status(400).json({
+                success: false,
+                message: "Select a supported content channel"
             });
         }
 
@@ -192,13 +233,14 @@ const updateDraft = async (req, res) => {
             draft.title !== newTitle ||
             draft.content !== newContent ||
             draft.channel !== newChannel;
+        const previousStatus = draft.status;
 
         draft.title = newTitle;
         draft.content = newContent;
         draft.channel = newChannel;
 
         // Reset scan and approval data only when something changes
-        
+
         if (contentChanged) {
             draft.findings = [];
             draft.findingsCount = 0;
@@ -208,6 +250,17 @@ const updateDraft = async (req, res) => {
 
 
         await draft.save();
+
+        if (contentChanged) {
+            await recordAudit({
+                draft: draft._id,
+                user: req.user.userId,
+                organisationId: req.user.organisationId,
+                action: "Updated",
+                previousStatus,
+                newStatus: draft.status
+            });
+        }
 
         return res.status(200).json({
             success: true,
@@ -268,8 +321,18 @@ const scanDraft = async (req, res) => {
             });
         }
 
-        // Scan draft content using Gemini AI
-        const result = await scanContent(draft.content, draft.title);
+        let result;
+        try {
+            result = await geminiService.scanContent(draft.content, draft.title);
+        } catch (error) {
+            await recordAudit({
+                draft: draft._id,
+                user: req.user.userId,
+                organisationId: req.user.organisationId,
+                action: "Scan Failed"
+            });
+            throw error;
+        }
 
         // Safely handle the findings returned by Gemini
         const findings = Array.isArray(result?.findings)
@@ -278,10 +341,19 @@ const scanDraft = async (req, res) => {
 
         // Save scan results in MongoDB
         draft.findings = findings;
-        draft.findingsCount = findings.length;
+        draft.findingsCount = findings.filter((finding) =>
+            !finding.status || finding.status === "Open"
+        ).length;
         draft.scannedAt = new Date();
 
         await draft.save();
+        await recordAudit({
+            draft: draft._id,
+            user: req.user.userId,
+            organisationId: req.user.organisationId,
+            action: "Scan Completed",
+            metadata: { findingsCount: draft.findingsCount }
+        });
 
         return res.status(200).json({
             success: true,
@@ -358,27 +430,40 @@ const submitDraft = async (req, res) => {
             });
         }
 
-        // Store the previous status
         const previousStatus = draft.status;
 
-        // Update draft status
-        draft.status = "Pending Approval";
-        await draft.save();
+        const submittedDraft = await Draft.findOneAndUpdate(
+            {
+                _id: draft._id,
+                organisationId: req.user.organisationId,
+                author: req.user.userId,
+                status: previousStatus,
+                scannedAt: { $ne: null }
+            },
+            { $set: { status: "Pending Approval" } },
+            { new: true, runValidators: true }
+        );
+        if (!submittedDraft) {
+            return res.status(409).json({
+                success: false,
+                message: "Draft changed while submitting. Reload and try again."
+            });
+        }
 
         // Save audit history
-        await AuditLog.create({
-            draft: draft._id,
+        await recordAudit({
+            draft: submittedDraft._id,
             user: req.user.userId,
             organisationId: req.user.organisationId,
             action: "Submitted",
             previousStatus,
-            newStatus: draft.status
+            newStatus: submittedDraft.status
         });
 
         return res.status(200).json({
             success: true,
             message: "Draft submitted for review",
-            draft
+            draft: submittedDraft
         });
 
     } catch (error) {
@@ -443,24 +528,34 @@ const reviewDraft = async (req, res) => {
         }
 
         const previousStatus = draft.status;
-
-        draft.status =
-            action === "approve"
-                ? "Approved"
-                : "Needs Changes";
-
-        await draft.save();
+        const newStatus = action === "approve" ? "Approved" : "Needs Changes";
+        const reviewedDraft = await Draft.findOneAndUpdate(
+            {
+                _id: draft._id,
+                organisationId: req.user.organisationId,
+                author: { $ne: req.user.userId },
+                status: "Pending Approval"
+            },
+            { $set: { status: newStatus } },
+            { new: true, runValidators: true }
+        );
+        if (!reviewedDraft) {
+            return res.status(409).json({
+                success: false,
+                message: "Draft has already been reviewed. Refresh the queue."
+            });
+        }
 
         // Save the review action in the audit log
-        
-        await AuditLog.create({
-            draft: draft._id,
+
+        await recordAudit({
+            draft: reviewedDraft._id,
             user: req.user.userId,
             organisationId: req.user.organisationId,
             action: action === "approve" ? "Approved" : "Changes Requested",
             comment: typeof comment === "string" ? comment.trim() : "",
             previousStatus,
-            newStatus: draft.status
+            newStatus: reviewedDraft.status
         });
         return res.status(200).json({
             success: true,
@@ -468,7 +563,7 @@ const reviewDraft = async (req, res) => {
                 action === "approve"
                     ? "Draft approved successfully"
                     : "Changes requested successfully",
-            draft
+            draft: reviewedDraft
         });
 
     } catch (error) {
@@ -483,6 +578,63 @@ const reviewDraft = async (req, res) => {
     }
 };
 
+const addDraftComment = async (req, res) => {
+    try {
+        const { comment } = req.body;
+        if (typeof comment !== "string" || !comment.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: "A comment is required"
+            });
+        }
+        if (comment.trim().length > 4000) {
+            return res.status(400).json({
+                success: false,
+                message: "Comment must be 4,000 characters or fewer"
+            });
+        }
+
+        const draft = await Draft.findOne({
+            _id: req.params.id,
+            organisationId: req.user.organisationId,
+            status: { $in: ["Pending Approval", "Needs Changes", "Approved"] }
+        });
+        if (!draft) {
+            return res.status(404).json({
+                success: false,
+                message: "Submitted draft not found"
+            });
+        }
+        if (String(draft.author) === String(req.user.userId)) {
+            return res.status(403).json({
+                success: false,
+                message: "Authors cannot comment through the review workflow"
+            });
+        }
+
+        await recordAudit({
+            draft: draft._id,
+            user: req.user.userId,
+            organisationId: req.user.organisationId,
+            action: "Commented",
+            comment: comment.trim(),
+            previousStatus: draft.status,
+            newStatus: draft.status
+        });
+
+        return res.status(201).json({
+            success: true,
+            message: "Comment recorded"
+        });
+    } catch (error) {
+        console.error("Add draft comment error:", error.message);
+        return res.status(error.name === "CastError" ? 400 : 500).json({
+            success: false,
+            message: error.name === "CastError" ? "Invalid draft ID" : "Unable to record comment"
+        });
+    }
+};
+
 
 
 module.exports = {
@@ -492,5 +644,6 @@ module.exports = {
     updateDraft,
     scanDraft,
     submitDraft,
-    reviewDraft
+    reviewDraft,
+    addDraftComment
 };

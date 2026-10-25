@@ -45,16 +45,17 @@ export default function App() {
     if (user) return <Navigate to="/" replace />;
     return <Login sessionError={sessionError} onLogin={(u, previewRole)=>{setUser(u);setRole(previewRole || normalizeRole(u.role));}} />;
   }
-  return <Protected user={user}><Layout role={role} actualRole={normalizeRole(user?.role)} user={user} setUser={setUser} setRole={setRole}><Routes>
-    <Route path="/" element={<Dashboard role={role}/>}/>
-    <Route path="/drafts" element={<Dashboard role={role}/>}/>
-    <Route path="/drafts/new" element={role==='Creator'?<DraftEditor actualRole={normalizeRole(user?.role)}/>:<Navigate to="/" replace/>}/>
+  const actualRole = normalizeRole(user?.role);
+  return <Protected user={user}><Layout role={role} actualRole={actualRole} user={user} setUser={setUser} setRole={setRole}><Routes>
+    <Route path="/" element={<Dashboard role={actualRole} actualRole={actualRole}/>}/>
+    <Route path="/drafts" element={<Dashboard role={actualRole} actualRole={actualRole} showDrafts/>}/>
+    <Route path="/drafts/new" element={actualRole==='Creator'?<DraftEditor actualRole={actualRole}/>:<Navigate to="/" replace/>}/>
     <Route path="/drafts/:id" element={<DraftEditor actualRole={normalizeRole(user?.role)}/>}/>
-    <Route path="/review" element={['Reviewer','Manager','Admin'].includes(role)?<Review role={role}/>:<Navigate to="/" replace/>}/>
-    <Route path="/rulebook" element={['Manager','Admin'].includes(role)?<Rulebook/>:<Navigate to="/" replace/>}/>
-    <Route path="/facts" element={['Manager','Admin'].includes(role)?<Facts/>:<Navigate to="/" replace/>}/>
-    <Route path="/audit" element={['Manager','Admin'].includes(role)?<AuditLog/>:<Navigate to="/" replace/>}/>
-    <Route path="/settings" element={role==='Admin'?<Settings/>:<Navigate to="/" replace/>}/>
+    <Route path="/review" element={['Reviewer','Manager','Admin'].includes(actualRole)?<Review role={actualRole}/>:<Navigate to="/" replace/>}/>
+    <Route path="/rulebook" element={['Manager','Admin'].includes(actualRole)?<Rulebook/>:<Navigate to="/" replace/>}/>
+    <Route path="/facts" element={['Manager','Admin'].includes(actualRole)?<Facts/>:<Navigate to="/" replace/>}/>
+    <Route path="/audit" element={['Reviewer','Manager','Admin'].includes(actualRole)?<AuditLog/>:<Navigate to="/" replace/>}/>
+    <Route path="/settings" element={actualRole==='Admin'?<Settings/>:<Navigate to="/" replace/>}/>
     <Route path="*" element={<Navigate to="/" replace/>}/>
   </Routes></Layout></Protected>;
 }

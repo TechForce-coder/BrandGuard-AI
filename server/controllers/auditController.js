@@ -16,7 +16,9 @@ const getAudit = async (req, res) => {
             logs: logs.map((log) => ({
                 id: log._id,
                 action: log.action,
-                item: log.draft?.title || "Content item",
+                item: log.draft?.title || log.resourceName || "Content item",
+                resourceType: log.resourceType || "draft",
+                resourceId: log.resourceId || log.draft?._id,
                 actor: log.user?.name || log.user?.email || "Workspace user",
                 comment: log.comment || "",
                 previousStatus: log.previousStatus,

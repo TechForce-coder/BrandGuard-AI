@@ -68,14 +68,20 @@ Open [http://localhost:5000](http://localhost:5000). Startup fails clearly if th
 | Create organization | `POST /api/organisations` | JWT + admin role → `organisationRoutes` → `organisationController.createOrganisation` | Reads/creates `Organisation` |
 | List/view/create/update drafts | `/api/drafts` and `/api/drafts/:id` | `draftRoutes` → `draftController` | Reads/writes `Draft`; organization and role scoped |
 | Scan draft | `POST /api/drafts/:id/scan` | `draftRoutes` → `draftController.scanDraft` → `geminiService` | Saves findings and scan timestamp to `Draft` |
-| Submit/review | `POST /api/drafts/:id/submit`, `/approve`, `/request-changes` | `draftRoutes` → `draftController` | Updates `Draft`; records `AuditLog` |
-| Resolve finding | `PATCH /api/findings/:id` | `findingRoutes` → `findingController.updateFinding` | Updates a finding in `Draft` |
-| Read audit history | `GET /api/audit` | `auditRoutes` → `auditController.getAudit` | Reads organization-scoped `AuditLog` records |
+| Submit/review/comment | `POST /api/drafts/:id/submit`, `/approve`, `/request-changes`, `/comments` | `draftRoutes` → `draftController` | Updates `Draft`; stores actions/comments in `AuditLog` |
+| Resolve finding | `PATCH /api/findings/:id` | `findingRoutes` → `findingController.updateFinding` | Updates the creator-owned draft finding; records an `AuditLog` event |
+| Read audit history | `GET /api/audit` | `auditRoutes` → `auditController.getAudit` | Reads organization-scoped `AuditLog` records for Reviewer, Manager, and Admin |
+| Manage guidelines | `GET/POST /api/rulebook`, `PUT/DELETE /api/rulebook/:id` | `rulebookRoutes` → `catalogController` | Organization-scoped `RulebookEntry` collection; Manager/Admin only |
+| Manage facts | `GET/POST /api/facts`, `PUT/DELETE /api/facts/:id` | `factRoutes` → `catalogController` | Organization-scoped `Fact` collection; Manager/Admin only |
 | Health check | `GET /api/health` | Express app | No database operation |
 
-The rules and facts pages currently call `/api/rulebook` and `/api/facts`, but this repository has no matching routes, controllers, or database models. They return explicit JSON 404 errors rather than placeholder data. The frontend Administration page is informational only, and the backend user schema supports `creator`, `reviewer`, and `manager`; it does not currently support an administrator account/role.
+Draft lists are scoped by authenticated role: Creators see only their own editable drafts, and Reviewer/Manager/Admin see only submitted, changes-requested, or approved content. A Creator cannot fetch a submitted or approved draft, and server-side workflow endpoints enforce their role and ownership checks independently of the preview-only frontend role selector. Each authenticated request reloads the account's current role and organisation from MongoDB, so role changes invalidate stale JWT role claims immediately.
 
-Audit history currently records submission, approval, and changes-requested events, which are the actions represented by the existing `AuditLog` schema. It does not claim to record scans or finding decisions.
+The Rulebook and Facts interfaces now have organization-scoped MongoDB persistence and Manager/Admin create, edit, and delete controls. Their fields follow the data already displayed by those pages: guideline title/description/status and fact title/owner/valid-until/status. Existing audit records remain readable; new draft creation/updates, scans, finding decisions, review comments, decisions, and guideline/fact mutations are also recorded.
+
+There is no Terms page, Terms model, or terms API in the repository, so Terms management is not implemented. Saved Rulebook entries are not currently injected into the Gemini scan prompt; the current scan engine evaluates content using its existing prompt and configured Gemini service only. No rules-only fallback is claimed.
+
+The user schema supports `creator`, `reviewer`, `manager`, and `admin`, but public registration assigns only `creator`. Privileged roles must be assigned through an authorized operations process; no privileged account or credential has been added.
 
 ## Tests
 
@@ -87,4 +93,4 @@ node --check .\server\server.js
 node --check .\server\app.js
 ```
 
-The automated HTTP tests cover health responses, unknown API paths, unsupported feature endpoints, authentication and role gates, malformed JSON, SPA deep links, and missing static assets. They do not require a live MongoDB or Gemini account. Database-backed persistence, credential-based login/registration, approval workflow, and Gemini scanning require configured services and must be verified against a non-production database.
+The automated HTTP tests cover health responses, unknown API paths, authentication, current-role authorization, role gates, draft visibility filters, catalog write validation and controller behavior, malformed JSON, SPA deep links, missing static assets, and scanner response/provider failure handling. They do not require a live MongoDB or Gemini account. MongoDB connectivity was separately verified with a ping, and a non-persistent synthetic Gemini provider scan completed using the configured service. Database-backed draft/catalog mutations, credential-based login, and authenticated approval remain unverified because no authorized test account is configured.

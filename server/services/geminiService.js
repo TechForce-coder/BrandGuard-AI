@@ -6,7 +6,55 @@ const { GoogleGenAI } = require("@google/genai");
 const sleep = (ms) =>
     new Promise((resolve) => setTimeout(resolve, ms));
 
-async function scanContent(content, title = "") {
+const GEMINI_REQUEST_TIMEOUT_MS = 30000;
+
+const createGeminiClient = (apiKey, timeoutMs) => new GoogleGenAI({
+    apiKey,
+    httpOptions: { timeout: timeoutMs }
+});
+
+function parseGeminiResponse(responseText, content) {
+    if (!responseText) {
+        throw new Error("Gemini returned an empty response");
+    }
+
+    let result;
+    try {
+        result = JSON.parse(responseText);
+    } catch {
+        throw new Error("Gemini returned invalid JSON");
+    }
+
+    if (!result || !Array.isArray(result.findings)) {
+        throw new Error("Gemini response has an invalid findings format");
+    }
+
+    const validSeverities = new Set(["Low", "Medium", "High"]);
+    const validFindings = result.findings.every((finding) =>
+        finding &&
+        typeof finding === "object" &&
+        !Array.isArray(finding) &&
+        typeof finding.type === "string" &&
+        Boolean(finding.type.trim()) &&
+        typeof finding.quote === "string" &&
+        Boolean(finding.quote.trim()) &&
+        content.includes(finding.quote) &&
+        typeof finding.explanation === "string" &&
+        Boolean(finding.explanation.trim()) &&
+        (finding.suggestion === undefined || typeof finding.suggestion === "string") &&
+        validSeverities.has(finding.severity)
+    );
+    if (!validFindings) {
+        throw new Error("Gemini response contains invalid finding data");
+    }
+
+    return {
+        findings: result.findings,
+        summary: { total: result.findings.length }
+    };
+}
+
+async function scanContent(content, title = "", clientFactory = createGeminiClient) {
     if (!process.env.GEMINI_API_KEY) {
         throw new Error("GEMINI_API_KEY is not configured");
     }
@@ -15,9 +63,7 @@ async function scanContent(content, title = "") {
         throw new Error("Draft content is empty");
     }
 
-    const ai = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY
-    });
+    const ai = clientFactory(process.env.GEMINI_API_KEY, GEMINI_REQUEST_TIMEOUT_MS);
 
     const prompt = `
 You are a brand governance assistant.
@@ -135,30 +181,7 @@ Rules:
         );
     }
 
-    if (!response.text) {
-        throw new Error("Gemini returned an empty response");
-    }
-
-    let result;
-
-    try {
-        result = JSON.parse(response.text);
-    } catch {
-        throw new Error("Gemini returned invalid JSON");
-    }
-
-    if (!result || !Array.isArray(result.findings)) {
-        throw new Error("Gemini response has an invalid findings format");
-    }
-
-    const findings = result.findings;
-
-    return {
-        findings,
-        summary: {
-            total: findings.length
-        }
-    };
+    return parseGeminiResponse(response.text, content);
 }
 
-module.exports = { scanContent };
+module.exports = { scanContent, parseGeminiResponse };

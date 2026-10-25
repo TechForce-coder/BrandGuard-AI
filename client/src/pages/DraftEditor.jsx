@@ -64,7 +64,7 @@ export default function DraftEditor({ actualRole }) {
       setText(data.content || '');
       setFindings(data.findings || []);
       setStatus(data.status || 'Draft');
-      setScanned(false);
+      setScanned(Boolean(data.scannedAt));
     } catch (err) {
       setError(err.message || 'Failed to load draft.');
     } finally {
@@ -102,6 +102,8 @@ export default function DraftEditor({ actualRole }) {
         content: text,
       });
       setStatus(saved.status || status || 'Draft');
+      setFindings(Array.isArray(saved.findings) ? saved.findings : []);
+      setScanned(Boolean(saved.scannedAt));
 
       setMessage('Draft saved.');
       return { ...saved, id: savedId };
@@ -206,6 +208,24 @@ export default function DraftEditor({ actualRole }) {
     }
   }
 
+  async function handleComment(comment = '') {
+    if (!comment.trim()) {
+      setError('Enter a comment before recording it.');
+      return;
+    }
+    try {
+      setSaving(true);
+      setError('');
+      setMessage('');
+      await api.addDraftComment(draftId, comment);
+      setMessage('Review comment recorded.');
+    } catch (err) {
+      setError(err.message || 'Failed to record review comment.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleReview(decision, comments = '') {
     if (decision === 'Needs Changes' && !comments.trim()) {
       setError('Add a comment explaining the requested changes.');
@@ -285,13 +305,13 @@ export default function DraftEditor({ actualRole }) {
         </div>
 
         {error && (
-          <p className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">
+          <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
             {error}
           </p>
         )}
 
         {message && (
-          <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">
+          <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
             {message}
           </p>
         )}
@@ -451,7 +471,9 @@ export default function DraftEditor({ actualRole }) {
               size={24}
             />
             <p className="text-sm text-slate-600">
-              No scan findings available yet.
+              {scanned
+                ? 'No issues were identified in the latest scan. Review the content before publishing.'
+                : 'Run a scan to review the issues identified in your draft.'}
             </p>
           </div>
         )}
@@ -466,6 +488,7 @@ export default function DraftEditor({ actualRole }) {
 
             <ReviewActions
               onReview={handleReview}
+              onComment={handleComment}
               loading={saving}
             />
           </section>
@@ -474,7 +497,7 @@ export default function DraftEditor({ actualRole }) {
   );
 }
 
-function ReviewActions({ onReview, loading }) {
+function ReviewActions({ onReview, onComment, loading }) {
   const [comments, setComments] = useState('');
 
   return (
@@ -487,6 +510,14 @@ function ReviewActions({ onReview, loading }) {
       />
 
       <div className="flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={() => onComment(comments)}
+          disabled={loading || !comments.trim()}
+          className="btn-secondary"
+        >
+          Add comment
+        </button>
         <button
           type="button"
           onClick={() => onReview('Approved', comments)}

@@ -15,8 +15,11 @@ export default function FindingsPanel({ findings = [], onDecision, readOnly = fa
 
   return (
     <div className="space-y-3">
-      {findings.map((f, index) => (
-        <article key={f.id || index} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.03)]">
+      {findings.map((f, index) => {
+        const reasonKey = f.id || index;
+
+        return (
+        <article key={reasonKey} className="surface-card p-5">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
               <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-50 text-rose-700">
@@ -40,7 +43,7 @@ export default function FindingsPanel({ findings = [], onDecision, readOnly = fa
           <p className="text-sm leading-6 text-slate-600">{f.explanation || f.description}</p>
           {f.suggestion && (
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              <span className="font-semibold text-emerald-700">Suggested change:</span> {f.suggestion}
+              <span className="font-semibold text-blue-700">Suggested change:</span> {f.suggestion}
             </p>
           )}
           {f.citation && <p className="mt-2 text-xs text-slate-500">Citation: {f.citation}</p>}
@@ -51,26 +54,24 @@ export default function FindingsPanel({ findings = [], onDecision, readOnly = fa
                 Decision note
                 <span className="font-normal text-slate-400"> (required to dispute)</span>
                 <input
-                  aria-label="Decision reason"
+                  aria-label={`Decision note for ${f.type || f.title || `finding ${index + 1}`}`}
                   className="field mt-1.5"
                   placeholder="Add context for your decision"
-                  value={reasons[f.id] || ''}
-                  onChange={e => setReasons({ ...reasons, [f.id]: e.target.value })}
+                  value={reasons[reasonKey] || ''}
+                  onChange={e => setReasons(previous => ({ ...previous, [reasonKey]: e.target.value }))}
                 />
               </label>
               <div className="flex flex-wrap gap-2">
-                <button className="btn-success" onClick={() => onDecision?.(f, 'Accepted', reasons[f.id] || '')}>
+                <button type="button" className="btn-success" onClick={() => onDecision?.(f, 'Accepted', reasons[reasonKey] || '')}>
                   <Check size={15} /> Accept
                 </button>
-                <button className="btn-secondary" onClick={() => onDecision?.(f, 'Rejected', reasons[f.id] || '')}>
+                <button type="button" className="btn-secondary" onClick={() => onDecision?.(f, 'Rejected', reasons[reasonKey] || '')}>
                   <X size={15} /> Reject
                 </button>
                 <button
+                  type="button"
                   className="btn-secondary"
-                  onClick={() => {
-                    if (!reasons[f.id]?.trim()) return alert('Please enter a reason to dispute.');
-                    onDecision?.(f, 'Disputed', reasons[f.id]);
-                  }}
+                  onClick={() => onDecision?.(f, 'Disputed', reasons[reasonKey] || '')}
                 >
                   <MessageSquareWarning size={15} /> Dispute
                 </button>
@@ -78,7 +79,8 @@ export default function FindingsPanel({ findings = [], onDecision, readOnly = fa
             </div>
           )}
         </article>
-      ))}
+        );
+      })}
     </div>
   );
 }

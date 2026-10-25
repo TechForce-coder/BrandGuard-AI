@@ -4,7 +4,7 @@ export default function StatCard({ label, value, note, accent = 'text-slate-950'
       <div className="flex items-center justify-between gap-3">
         <p className="text-[11px] font-semibold uppercase tracking-[.12em] text-slate-500">{label}</p>
         {Icon && (
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-800 ring-1 ring-blue-100">
             <Icon size={18} strokeWidth={1.9} aria-hidden="true" />
           </span>
         )}

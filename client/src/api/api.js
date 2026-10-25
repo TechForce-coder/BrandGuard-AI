@@ -117,12 +117,43 @@ export const api = {
     });
   },
 
+  async addDraftComment(id, comment) {
+    return request(`/drafts/${encodeURIComponent(id)}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ comment })
+    });
+  },
+
   async getRulebook() {
     return request('/rulebook');
   },
 
+  async createRule(data) {
+    return request('/rulebook', { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async updateRule(id, data) {
+    return request(`/rulebook/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) });
+  },
+
+  async deleteRule(id) {
+    return request(`/rulebook/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+
   async getFacts() {
     return request('/facts');
+  },
+
+  async createFact(data) {
+    return request('/facts', { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async updateFact(id, data) {
+    return request(`/facts/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) });
+  },
+
+  async deleteFact(id) {
+    return request(`/facts/${encodeURIComponent(id)}`, { method: 'DELETE' });
   },
 
   async getAudit() {

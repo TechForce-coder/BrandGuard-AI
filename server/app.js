@@ -6,6 +6,8 @@ const draftRoutes = require("./routes/draftRoutes");
 const organisationRoutes = require("./routes/organisationRoutes");
 const findingRoutes = require("./routes/findingRoutes");
 const auditRoutes = require("./routes/auditRoutes");
+const rulebookRoutes = require("./routes/rulebookRoutes");
+const factRoutes = require("./routes/factRoutes");
 const path = require("path");
 
 const app = express();
@@ -14,11 +16,25 @@ const frontendPath = path.join(__dirname, "../client/dist");
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use("/api", (req, res, next) => {
+    if (
+        req.body !== undefined &&
+        (req.body === null || typeof req.body !== "object" || Array.isArray(req.body))
+    ) {
+        return res.status(400).json({
+            success: false,
+            message: "Request body must be a JSON object"
+        });
+    }
+    return next();
+});
 app.use("/api/auth", authRoutes);
 app.use("/api/drafts", draftRoutes);
 app.use("/api/organisations", organisationRoutes);
 app.use("/api/findings", findingRoutes);
 app.use("/api/audit", auditRoutes);
+app.use("/api/rulebook", rulebookRoutes);
+app.use("/api/facts", factRoutes);
 app.get("/api/protected", authenticate, (req, res) => {
     res.json({
         success: true,

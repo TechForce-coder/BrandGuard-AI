@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Activity, ClipboardList, ShieldCheck } from 'lucide-react';
 import { api } from '../api/api.js';
+import { formatDateTime } from '../utils/formatDateTime.js';
 
 export default function AuditLog() {
   const [logs, setLogs] = useState([]);
@@ -22,7 +23,7 @@ export default function AuditLog() {
   return (
     <div className="mx-auto max-w-4xl space-y-7">
       <header>
-        <p className="text-xs font-semibold uppercase tracking-[.12em] text-emerald-800">Governance & privacy</p>
+        <p className="section-kicker">Governance &amp; privacy</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Privacy &amp; Audit Log</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">A transparent timeline of recorded actions across the content approval workflow.</p>
       </header>
@@ -34,7 +35,7 @@ export default function AuditLog() {
       )}
       <section className="surface-card overflow-hidden">
         <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4 sm:px-6">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800"><ShieldCheck size={18} /></span>
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-800"><ShieldCheck size={18} /></span>
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Workspace activity</h2>
             <p className="mt-0.5 text-xs text-slate-500">
@@ -56,8 +57,14 @@ export default function AuditLog() {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-slate-900">{log.action || log.event || 'Workflow event'}</p>
                   <p className="mt-1 text-sm text-slate-600">{log.item || log.resource || 'Workflow event'} <span className="text-slate-300">·</span> {log.actor || log.user || 'System'}</p>
+                  {log.comment && <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{log.comment}</p>}
                 </div>
-                <time className="shrink-0 pt-0.5 text-xs text-slate-400">{log.when || log.createdAt || '—'}</time>
+                <time
+                  className="shrink-0 pt-0.5 text-xs text-slate-400"
+                  dateTime={log.when || log.createdAt || undefined}
+                >
+                  {formatDateTime(log.when || log.createdAt)}
+                </time>
               </li>
             ))}
           </ol>

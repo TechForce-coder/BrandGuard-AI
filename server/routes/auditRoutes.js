@@ -4,6 +4,6 @@ const authenticate = require("../middleware/authMiddleware");
 const { authorizeRoles } = require("../middleware/authMiddleware");
 const { getAudit } = require("../controllers/auditController");
 
-router.get("/", authenticate, authorizeRoles("manager", "admin"), getAudit);
+router.get("/", authenticate, authorizeRoles("reviewer", "manager", "admin"), getAudit);
 
 module.exports = router;

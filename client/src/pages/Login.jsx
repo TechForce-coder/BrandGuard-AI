@@ -25,37 +25,33 @@ export default function Login({ onLogin, sessionError = '' }) {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#f4f7f4] px-4 py-10 sm:px-6">
-      <div className="pointer-events-none absolute -left-40 -top-44 h-[440px] w-[440px] rounded-full border border-emerald-100/80" />
-      <div className="pointer-events-none absolute -bottom-56 -right-40 h-[520px] w-[520px] rounded-full border border-emerald-100/80" />
-      <div className="relative grid w-full max-w-[1000px] overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_24px_80px_rgba(16,55,34,0.12)] md:min-h-[600px] md:grid-cols-[1.05fr_.95fr]">
-        <aside className="relative hidden flex-col justify-between overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.25),_transparent_35%),linear-gradient(135deg,_#062d22,_#0a3b2d_55%,_#0b4a33)] p-10 text-white md:flex lg:p-12">
-          <div className="pointer-events-none absolute -bottom-28 -right-24 h-80 w-80 rounded-full border border-emerald-700/50" />
-          <div className="pointer-events-none absolute -bottom-12 -right-8 h-52 w-52 rounded-full border border-emerald-700/40" />
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10 sm:px-6">
+      <div className="grid w-full max-w-[960px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/5 md:min-h-[560px] md:grid-cols-[1.05fr_.95fr]">
+        <aside className="hidden flex-col justify-between border-r border-slate-200 bg-slate-50 p-10 text-slate-900 md:flex lg:p-12">
           <div className="relative flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-emerald-100 ring-1 ring-white/15">
+            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-900 text-blue-100">
               <ShieldCheck size={25} strokeWidth={1.8} />
             </span>
-            <span className="text-xl font-semibold tracking-tight">BrandGuard</span>
+            <span className="text-xl font-semibold tracking-tight text-slate-950">BrandGuard</span>
           </div>
           <div className="relative max-w-md">
-            <span className="inline-flex items-center gap-2 rounded-full border border-emerald-700/60 bg-emerald-900/60 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[.12em] text-emerald-200">
+            <span className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[.12em] text-blue-800">
               <Sparkles size={13} /> Brand governance platform
             </span>
             <h1 className="mt-6 text-[40px] font-semibold leading-[1.12] tracking-tight lg:text-5xl">Confident content.<br />Consistent brand.</h1>
-            <p className="mt-5 max-w-sm text-sm leading-7 text-emerald-100/80">One thoughtful workflow to review, improve, and approve content before it reaches your audience.</p>
+            <p className="mt-5 max-w-sm text-sm leading-7 text-slate-600">One thoughtful workflow to review, improve, and approve content before it reaches your audience.</p>
           </div>
-          <div className="relative flex items-center gap-2 text-xs text-emerald-200/75">
+          <div className="relative flex items-center gap-2 text-xs text-slate-500">
             <LockKeyhole size={14} /> Human decisions stay in control.
           </div>
         </aside>
 
         <form onSubmit={submit} className="flex flex-col justify-center p-7 sm:p-10 lg:p-12">
           <div className="mb-8 flex items-center gap-3 md:hidden">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-900 text-white"><ShieldCheck size={22} /></span>
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-900 text-white"><ShieldCheck size={22} /></span>
             <span className="text-xl font-semibold tracking-tight text-slate-950">BrandGuard</span>
           </div>
-          <p className="text-xs font-semibold uppercase tracking-[.12em] text-emerald-800">Secure workspace access</p>
+          <p className="text-xs font-semibold uppercase tracking-[.12em] text-blue-800">Secure workspace access</p>
           <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Welcome back</h2>
           <p className="mt-2 text-sm leading-6 text-slate-500">Sign in to continue to your brand governance workspace.</p>
           <label className="mt-7 block text-sm font-semibold text-slate-800">
@@ -98,11 +94,11 @@ export default function Login({ onLogin, sessionError = '' }) {
             </span>
           </label>
           {(error || sessionError) && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-sm text-rose-800">{error || sessionError}</p>}
-          <button disabled={busy} className="btn-success mt-6 w-full justify-center py-3">
+          <button disabled={busy} className="btn-primary mt-6 w-full justify-center py-3">
             {busy ? 'Signing in…' : 'Sign in'} <ArrowRight size={16} />
           </button>
           <div className="mt-5 flex items-start gap-2.5 rounded-xl bg-slate-50 p-3.5 text-xs leading-5 text-slate-500">
-            <Check size={15} className="mt-0.5 shrink-0 text-emerald-700" />
+            <Check size={15} className="mt-0.5 shrink-0 text-blue-700" />
             <span>Use your organization credentials. Your account is managed by your organization.</span>
           </div>
         </form>

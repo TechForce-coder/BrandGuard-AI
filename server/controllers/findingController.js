@@ -1,5 +1,6 @@
 
 const Draft = require("../models/Draft");
+const { recordAudit } = require("../services/auditService");
 
 const updateFinding = async (req, res) => {
     try {
@@ -99,6 +100,13 @@ const updateFinding = async (req, res) => {
 
         draft.markModified("findings");
         await draft.save();
+        await recordAudit({
+            draft: draft._id,
+            user: req.user.userId,
+            organisationId: req.user.organisationId,
+            action: `Finding ${status}`,
+            comment: reason || ""
+        });
 
         return res.status(200).json({
             success: true,

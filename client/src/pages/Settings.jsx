@@ -19,14 +19,14 @@ export default function Settings() {
   return (
     <div className="max-w-4xl space-y-7">
       <header>
-        <p className="text-xs font-semibold uppercase tracking-[.12em] text-emerald-800">Administration</p>
+        <p className="section-kicker">Administration</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Workspace Administration</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Review environment status and the boundaries of this frontend configuration.</p>
       </header>
 
       <section className="surface-card p-5 sm:p-6">
         <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800"><SettingsIcon size={19} /></span>
+          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-800"><SettingsIcon size={19} /></span>
           <div><h2 className="text-base font-semibold text-slate-950">Workspace configuration</h2><p className="mt-1 text-xs text-slate-500">Current application integration details</p></div>
         </div>
         <SettingRow icon={ShieldCheck} title="Authentication and authorization">

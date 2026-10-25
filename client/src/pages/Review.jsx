@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight, ClipboardCheck, Search } from 'lucide-react';
 import { api } from '../api/api.js';
 import StatusBadge from '../components/StatusBadge.jsx';
+import { formatDateTime } from '../utils/formatDateTime.js';
 
 const filters = ['Pending Approval', 'Needs Changes', 'Approved', 'All'];
 
@@ -34,7 +35,7 @@ export default function Review({ role }) {
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[.12em] text-emerald-800">{role} workspace</p>
+        <p className="section-kicker">{role} workspace</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Review Queue</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Inspect submitted content, review its findings, and record an approval decision.</p>
       </div>
@@ -79,7 +80,7 @@ export default function Review({ role }) {
             </label>
             <div className="flex gap-1.5 overflow-x-auto" role="group" aria-label="Filter by review status">
               {filters.map(status => (
-                <button key={status} onClick={() => setFilter(status)} aria-pressed={filter === status} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition ${filter === status ? 'bg-emerald-900 text-white' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>{status}</button>
+                <button key={status} onClick={() => setFilter(status)} aria-pressed={filter === status} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition ${filter === status ? 'bg-blue-900 text-white' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>{status}</button>
               ))}
             </div>
           </div>
@@ -91,14 +92,16 @@ export default function Review({ role }) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map(draft => (
-                <tr key={draft.id} className="transition-colors hover:bg-emerald-50/30">
+                <tr key={draft.id} className="transition-colors hover:bg-blue-50/50">
                   <td className="px-5 py-4">
                     <p className="font-semibold text-slate-900">{draft.title}</p>
                     <p className="mt-1 text-xs text-slate-500">#{draft.id} <span className="px-1 text-slate-300">·</span> {draft.channel || 'Unspecified'}</p>
                   </td>
                   <td className="px-5 py-4 text-slate-600">{draft.author || '—'}</td>
                   <td className="px-5 py-4"><StatusBadge status={draft.status} /></td>
-                  <td className="whitespace-nowrap px-5 py-4 text-xs text-slate-500">{draft.updated || '—'}</td>
+                  <td className="whitespace-nowrap px-5 py-4 text-xs text-slate-500">
+                    <time dateTime={draft.updated || undefined}>{formatDateTime(draft.updated)}</time>
+                  </td>
                   <td className="px-5 py-4">
                     <button className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs" onClick={() => navigate(`/drafts/${draft.id}`)}>Review <ArrowRight size={14} /></button>
                   </td>
@@ -109,7 +112,7 @@ export default function Review({ role }) {
           {loading && <div className="space-y-3 p-5"><div className="skeleton h-10 w-full" /><div className="skeleton h-10 w-full" /></div>}
           {!loading && !error && rows.length === 0 && (
             <div className="px-5 py-14 text-center">
-              <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-800"><ClipboardCheck size={21} /></span>
+              <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-800"><ClipboardCheck size={21} /></span>
               <p className="mt-3 text-sm font-semibold text-slate-800">No items in this view</p>
               <p className="mt-1 text-sm text-slate-500">Try another status or search term. New submissions will appear here.</p>
             </div>

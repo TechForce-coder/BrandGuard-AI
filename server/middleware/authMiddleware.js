@@ -1,9 +1,9 @@
 const jwt = require("jsonwebtoken");
+const User = require("../models/User");
 
-const authenticate = (req, res, next) => {
+const authenticate = async (req, res, next) => {
     const authHeader = req.headers.authorization;
 
-    // Check whether the token was provided
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
         return res.status(401).json({
             success: false,
@@ -12,22 +12,46 @@ const authenticate = (req, res, next) => {
     }
 
     const token = authHeader.split(" ")[1];
+    let decoded;
 
     try {
-        // Verify the token
-        const decoded = jwt.verify(
-            token,
-            process.env.JWT_SECRET
-        );
-
-        // Store authenticated user information
-        req.user = decoded;
-
-        next();
+        decoded = jwt.verify(token, process.env.JWT_SECRET);
     } catch (error) {
         return res.status(401).json({
             success: false,
             message: "Invalid or expired token"
+        });
+    }
+
+    try {
+        const user = await User.findById(decoded.userId)
+            .select("role organisationId");
+
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid or expired token"
+            });
+        }
+
+        req.user = {
+            userId: String(user._id),
+            organisationId: String(user.organisationId),
+            role: user.role
+        };
+        return next();
+    } catch (error) {
+        if (error.name === "CastError") {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid or expired token"
+            });
+        }
+
+        console.error("Authentication account lookup failed");
+        return res.status(503).json({
+            success: false,
+            message: "Authentication service temporarily unavailable"
         });
     }
 };

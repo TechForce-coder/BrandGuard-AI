@@ -1,12 +1,19 @@
 import { useEffect, useState } from 'react';
-import { BookOpen, LockKeyhole, ShieldCheck } from 'lucide-react';
+import { BookOpen, LockKeyhole, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
 import { api } from '../api/api.js';
+
+const emptyForm = { title: '', description: '', status: 'Active' };
 
 export default function Rulebook() {
   const [rules, setRules] = useState([]);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState('');
+  const [formOpen, setFormOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -19,23 +26,115 @@ export default function Rulebook() {
     return () => { active = false; };
   }, [refreshKey]);
 
+  const startCreate = () => {
+    setEditingId('');
+    setForm(emptyForm);
+    setFormOpen(true);
+    setMessage('');
+  };
+
+  const startEdit = rule => {
+    setEditingId(String(rule._id || rule.id));
+    setForm({
+      title: rule.title || rule.name || '',
+      description: rule.description || rule.text || '',
+      status: rule.status || 'Active'
+    });
+    setFormOpen(true);
+    setMessage('');
+  };
+
+  const save = async event => {
+    event.preventDefault();
+    setSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      if (editingId) await api.updateRule(editingId, form);
+      else await api.createRule(form);
+      setFormOpen(false);
+      setForm(emptyForm);
+      setEditingId('');
+      setMessage(editingId ? 'Guideline updated.' : 'Guideline created.');
+      setRefreshKey(key => key + 1);
+    } catch (reason) {
+      setError(reason.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async rule => {
+    const id = String(rule._id || rule.id || '');
+    if (!id || !window.confirm(`Delete "${rule.title || rule.name || 'this guideline'}"?`)) return;
+    setError('');
+    setMessage('');
+    try {
+      await api.deleteRule(id);
+      setMessage('Guideline deleted.');
+      setRefreshKey(key => key + 1);
+    } catch (reason) {
+      setError(reason.message);
+    }
+  };
+
   return (
-    <div className="space-y-7">
-      <header>
-        <p className="text-xs font-semibold uppercase tracking-[.12em] text-emerald-800">Governance</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Guideline Library</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">The authoritative brand and policy guidance used to review submitted content.</p>
+    <div className="space-y-6">
+      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <p className="section-kicker">Governance</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Guideline Library</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">The authoritative brand and policy guidance used to review submitted content.</p>
+        </div>
+        <button type="button" className="btn-primary shrink-0" onClick={startCreate}>
+          <Plus size={16} aria-hidden="true" /> Add guideline
+        </button>
       </header>
+
       {error && (
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
           <span>{error}</span>
           <button type="button" className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs" onClick={() => setRefreshKey(key => key + 1)}>Retry</button>
         </div>
       )}
+      {message && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{message}</p>}
+
+      {formOpen && (
+        <form onSubmit={save} className="surface-card space-y-4 p-5 sm:p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-base font-semibold text-slate-950">{editingId ? 'Edit guideline' : 'Add guideline'}</h2>
+              <p className="mt-1 text-sm text-slate-500">Changes are saved to this organization’s workspace.</p>
+            </div>
+            <button type="button" className="icon-button" onClick={() => setFormOpen(false)} aria-label="Close guideline form"><X size={17} /></button>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block text-sm font-medium text-slate-700">
+              Title
+              <input className="field mt-1.5" required maxLength={160} value={form.title} onChange={event => setForm(previous => ({ ...previous, title: event.target.value }))} />
+            </label>
+            <label className="block text-sm font-medium text-slate-700">
+              Status
+              <select className="field mt-1.5" value={form.status} onChange={event => setForm(previous => ({ ...previous, status: event.target.value }))}>
+                <option>Active</option>
+                <option>Inactive</option>
+              </select>
+            </label>
+          </div>
+          <label className="block text-sm font-medium text-slate-700">
+            Guidance
+            <textarea className="field mt-1.5 min-h-28 resize-y" required maxLength={4000} value={form.description} onChange={event => setForm(previous => ({ ...previous, description: event.target.value }))} />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving…' : editingId ? 'Save changes' : 'Save guideline'}</button>
+            <button type="button" disabled={saving} className="btn-secondary" onClick={() => setFormOpen(false)}>Cancel</button>
+          </div>
+        </form>
+      )}
 
       {loading ? (
         <div className="grid gap-4 md:grid-cols-2">{[1, 2, 3].map(item => <div key={item} className="surface-card p-6"><div className="skeleton h-4 w-24" /><div className="skeleton mt-4 h-5 w-48" /><div className="skeleton mt-4 h-16 w-full" /></div>)}</div>
-      ) : error ? (
+      ) : error && !rules.length ? (
         <div className="surface-card px-5 py-14 text-center">
           <BookOpen className="mx-auto text-slate-300" size={26} />
           <p className="mt-3 text-sm font-semibold text-slate-800">Guidelines unavailable</p>
@@ -44,28 +143,32 @@ export default function Rulebook() {
       ) : rules.length ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {rules.map((rule, index) => (
-            <article key={rule.id || index} className="surface-card p-5 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(18,43,29,0.07)] sm:p-6">
+            <article key={rule._id || rule.id || index} className="surface-card flex flex-col p-5 sm:p-6">
               <div className="flex items-start justify-between gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800"><BookOpen size={19} aria-hidden="true" /></span>
-                <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-500">{rule.id || `RULE-${index + 1}`}</span>
+                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-800"><BookOpen size={19} aria-hidden="true" /></span>
+                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${rule.status === 'Inactive' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-800'}`}>{rule.status || 'Active'}</span>
               </div>
               <h2 className="mt-4 text-base font-semibold text-slate-950">{rule.title || rule.name || 'Brand guideline'}</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600">{rule.description || rule.text || 'No description provided.'}</p>
+              <p className="mt-2 flex-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">{rule.description || rule.text || 'No description provided.'}</p>
+              <div className="mt-5 flex gap-2 border-t border-slate-100 pt-4">
+                <button type="button" className="btn-secondary !min-h-9 !px-3 !py-2 text-xs" onClick={() => startEdit(rule)}>Edit</button>
+                <button type="button" className="btn-secondary !min-h-9 !px-3 !py-2 text-xs text-rose-700 hover:text-rose-800" onClick={() => remove(rule)}><Trash2 size={14} /> Delete</button>
+              </div>
             </article>
           ))}
         </div>
       ) : (
         <div className="surface-card px-5 py-14 text-center">
           <BookOpen className="mx-auto text-slate-300" size={26} />
-          <p className="mt-3 text-sm font-semibold text-slate-800">No guidelines available</p>
-          <p className="mt-1 text-sm text-slate-500">Guidelines will appear here when configured for this workspace.</p>
+          <p className="mt-3 text-sm font-semibold text-slate-800">No guidelines configured</p>
+          <p className="mt-1 text-sm text-slate-500">Add workspace guidance to make it available to authorized reviewers.</p>
         </div>
       )}
 
-      <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5">
+      <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3.5">
         <LockKeyhole size={16} className="mt-0.5 shrink-0 text-slate-500" aria-hidden="true" />
-        <p className="text-xs leading-5 text-slate-500"><span className="font-semibold text-slate-700">Authoritative guidance.</span> Changes to these rules should be managed through an authorized backend workflow.</p>
-        <ShieldCheck size={16} className="ml-auto mt-0.5 shrink-0 text-emerald-700" aria-hidden="true" />
+        <p className="text-xs leading-5 text-slate-500"><span className="font-semibold text-slate-700">Authoritative guidance.</span> Saved guidance is persisted in the organization workspace. Scan integration with this library is not yet implemented.</p>
+        <ShieldCheck size={16} className="ml-auto mt-0.5 shrink-0 text-blue-700" aria-hidden="true" />
       </div>
     </div>
   );
