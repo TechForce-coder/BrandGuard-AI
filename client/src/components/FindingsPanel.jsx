@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Check, X, MessageSquareWarning, ShieldAlert } from 'lucide-react';
+import { Check, X, MessageSquareWarning, ShieldAlert, WandSparkles } from 'lucide-react';
 import StatusBadge from './StatusBadge.jsx';
 
-export default function FindingsPanel({ findings = [], onDecision, readOnly = false }) {
+export default function FindingsPanel({ findings = [], onDecision, onApplySuggestion, readOnly = false }) {
   const [reasons, setReasons] = useState({});
 
   if (!findings.length) {
@@ -56,10 +56,23 @@ export default function FindingsPanel({ findings = [], onDecision, readOnly = fa
               <span className="font-semibold text-blue-700">Suggested change:</span> {f.suggestion}
             </p>
           )}
-          {f.citation && <p className="mt-2 text-xs text-slate-500">Citation: {f.citation}</p>}
+          {(f.citation || f.ruleId || f.factId) && (
+            <p className="mt-2 text-xs text-slate-500">
+              Reference: {f.citation || f.ruleId || f.factId}
+            </p>
+          )}
 
           {!readOnly && (
             <div className="mt-4 space-y-2">
+              {f.suggestion && f.field !== 'altText' && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => onApplySuggestion?.(f)}
+                >
+                  <WandSparkles size={15} /> Apply suggestion
+                </button>
+              )}
               <label className="block text-xs font-semibold text-slate-600">
                 Decision note
                 <span className="font-normal text-slate-400"> (required to dispute)</span>

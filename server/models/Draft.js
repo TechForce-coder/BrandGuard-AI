@@ -36,6 +36,16 @@ const draftSchema = new mongoose.Schema(
             type: String,
             default: "Website"
         },
+        hasImage: {
+            type: Boolean,
+            default: false
+        },
+        altText: {
+            type: String,
+            trim: true,
+            maxlength: 300,
+            default: ""
+        },
         status: {
             type: String,
             enum: [

@@ -8,6 +8,8 @@ export default function AuditLog() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [search, setSearch] = useState('');
+  const [actionFilter, setActionFilter] = useState('All');
 
   useEffect(() => {
     let active = true;
@@ -19,6 +21,22 @@ export default function AuditLog() {
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [refreshKey]);
+
+  const actions = [...new Set(logs.map(log => log.action).filter(Boolean))].sort();
+  const visibleLogs = logs.filter(log => {
+    const matchesAction = actionFilter === 'All' || log.action === actionFilter;
+    const searchable = [
+      log.action,
+      log.item,
+      log.resourceType,
+      log.resourceId,
+      log.actor,
+      log.comment,
+      log.previousStatus,
+      log.newStatus
+    ].join(' ').toLowerCase();
+    return matchesAction && searchable.includes(search.toLowerCase());
+  });
 
   return (
     <div className="mx-auto max-w-4xl space-y-7">
@@ -43,21 +61,54 @@ export default function AuditLog() {
                 ? 'Loading audit events…'
                 : error
                   ? 'Audit events unavailable'
-                  : `${logs.length} recorded ${logs.length === 1 ? 'event' : 'events'}`}
+                  : `${visibleLogs.length} of ${logs.length} recorded events`}
             </p>
+          </div>
+          <div className="ml-auto flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <label>
+              <span className="sr-only">Filter audit events by action</span>
+              <select
+                className="field !py-2"
+                value={actionFilter}
+                onChange={event => setActionFilter(event.target.value)}
+                aria-label="Filter audit events by action"
+              >
+                <option>All</option>
+                {actions.map(action => <option key={action}>{action}</option>)}
+              </select>
+            </label>
+            <label className="relative block sm:w-56">
+              <span className="sr-only">Search audit events</span>
+              <input
+                className="field !py-2"
+                type="search"
+                placeholder="Search events"
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                aria-label="Search audit events"
+              />
+            </label>
           </div>
         </div>
         {loading ? (
           <div className="space-y-4 p-5 sm:p-6">{[1, 2, 3].map(item => <div key={item} className="flex gap-3"><div className="skeleton h-9 w-9 shrink-0 rounded-xl" /><div className="flex-1"><div className="skeleton h-4 w-40" /><div className="skeleton mt-2 h-3 w-64" /></div></div>)}</div>
-        ) : logs.length ? (
+        ) : visibleLogs.length ? (
           <ol className="divide-y divide-slate-100">
-            {logs.map((log, index) => (
+            {visibleLogs.map((log, index) => (
               <li key={log.id || index} className="flex items-start gap-3 px-5 py-5 transition-colors hover:bg-slate-50/70 sm:gap-4 sm:px-6">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-500"><Activity size={17} /></span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-slate-900">{log.action || log.event || 'Workflow event'}</p>
                   <p className="mt-1 text-sm text-slate-600">{log.item || log.resource || 'Workflow event'} <span className="text-slate-300">·</span> {log.actor || log.user || 'System'}</p>
                   {log.comment && <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{log.comment}</p>}
+                  {(log.previousStatus || log.newStatus || log.resourceId) && (
+                    <p className="mt-2 text-xs text-slate-500">
+                      {log.previousStatus && <>From {log.previousStatus}</>}
+                      {log.previousStatus && log.newStatus && ' · '}
+                      {log.newStatus && <>To {log.newStatus}</>}
+                      {log.resourceId && <> · {log.resourceType || 'Entity'} ID: {log.resourceId}</>}
+                    </p>
+                  )}
                 </div>
                 <time
                   className="shrink-0 pt-0.5 text-xs text-slate-400"
@@ -77,8 +128,8 @@ export default function AuditLog() {
         ) : (
           <div className="px-5 py-14 text-center">
             <ClipboardList className="mx-auto text-slate-300" size={26} />
-            <p className="mt-3 text-sm font-semibold text-slate-800">No activity recorded yet</p>
-            <p className="mt-1 text-sm text-slate-500">Workflow events will appear here as they are recorded.</p>
+            <p className="mt-3 text-sm font-semibold text-slate-800">{logs.length ? 'No matching activity' : 'No activity recorded yet'}</p>
+            <p className="mt-1 text-sm text-slate-500">{logs.length ? 'Adjust the search or action filter.' : 'Workflow events will appear here as they are recorded.'}</p>
           </div>
         )}
       </section>

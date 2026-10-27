@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { BookOpen, LockKeyhole, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
 import { api } from '../api/api.js';
+import { canMutateInWorkspace } from '../utils/workspacePreview.js';
 
 const emptyForm = { title: '', description: '', status: 'Active' };
 
-export default function Rulebook() {
+export default function Rulebook({ actualRole = '', previewMode = false }) {
   const [rules, setRules] = useState([]);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -14,6 +15,8 @@ export default function Rulebook() {
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState('');
   const [formOpen, setFormOpen] = useState(false);
+  const canManage = canMutateInWorkspace(previewMode) &&
+    ['manager', 'admin'].includes(String(actualRole).toLowerCase());
 
   useEffect(() => {
     let active = true;
@@ -27,6 +30,7 @@ export default function Rulebook() {
   }, [refreshKey]);
 
   const startCreate = () => {
+    if (!canManage) return;
     setEditingId('');
     setForm(emptyForm);
     setFormOpen(true);
@@ -34,6 +38,7 @@ export default function Rulebook() {
   };
 
   const startEdit = rule => {
+    if (!canManage) return;
     setEditingId(String(rule._id || rule.id));
     setForm({
       title: rule.title || rule.name || '',
@@ -46,6 +51,10 @@ export default function Rulebook() {
 
   const save = async event => {
     event.preventDefault();
+    if (!canManage) {
+      setError('Guideline changes are disabled in development workspace preview.');
+      return;
+    }
     setSaving(true);
     setError('');
     setMessage('');
@@ -65,6 +74,7 @@ export default function Rulebook() {
   };
 
   const remove = async rule => {
+    if (!canManage) return;
     const id = String(rule._id || rule.id || '');
     if (!id || !window.confirm(`Delete "${rule.title || rule.name || 'this guideline'}"?`)) return;
     setError('');
@@ -86,7 +96,7 @@ export default function Rulebook() {
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Guideline Library</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">The authoritative brand and policy guidance used to review submitted content.</p>
         </div>
-        <button type="button" className="btn-primary shrink-0" onClick={startCreate}>
+        <button type="button" disabled={!canManage} className="btn-primary shrink-0" onClick={startCreate}>
           <Plus size={16} aria-hidden="true" /> Add guideline
         </button>
       </header>
@@ -111,11 +121,11 @@ export default function Rulebook() {
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-sm font-medium text-slate-700">
               Title
-              <input className="field mt-1.5" required maxLength={160} value={form.title} onChange={event => setForm(previous => ({ ...previous, title: event.target.value }))} />
+              <input className="field mt-1.5" required disabled={!canManage} maxLength={160} value={form.title} onChange={event => setForm(previous => ({ ...previous, title: event.target.value }))} />
             </label>
             <label className="block text-sm font-medium text-slate-700">
               Status
-              <select className="field mt-1.5" value={form.status} onChange={event => setForm(previous => ({ ...previous, status: event.target.value }))}>
+              <select className="field mt-1.5" disabled={!canManage} value={form.status} onChange={event => setForm(previous => ({ ...previous, status: event.target.value }))}>
                 <option>Active</option>
                 <option>Inactive</option>
               </select>
@@ -123,10 +133,10 @@ export default function Rulebook() {
           </div>
           <label className="block text-sm font-medium text-slate-700">
             Guidance
-            <textarea className="field mt-1.5 min-h-28 resize-y" required maxLength={4000} value={form.description} onChange={event => setForm(previous => ({ ...previous, description: event.target.value }))} />
+            <textarea className="field mt-1.5 min-h-28 resize-y" required disabled={!canManage} maxLength={4000} value={form.description} onChange={event => setForm(previous => ({ ...previous, description: event.target.value }))} />
           </label>
           <div className="flex flex-wrap gap-2">
-            <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving…' : editingId ? 'Save changes' : 'Save guideline'}</button>
+            <button type="submit" disabled={!canManage || saving} className="btn-primary">{saving ? 'Saving…' : editingId ? 'Save changes' : 'Save guideline'}</button>
             <button type="button" disabled={saving} className="btn-secondary" onClick={() => setFormOpen(false)}>Cancel</button>
           </div>
         </form>
@@ -149,10 +159,11 @@ export default function Rulebook() {
                 <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${rule.status === 'Inactive' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-800'}`}>{rule.status || 'Active'}</span>
               </div>
               <h2 className="mt-4 text-base font-semibold text-slate-950">{rule.title || rule.name || 'Brand guideline'}</h2>
+              <p className="mt-1 break-all font-mono text-[11px] text-slate-400">ID: {rule._id || rule.id || '—'}</p>
               <p className="mt-2 flex-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">{rule.description || rule.text || 'No description provided.'}</p>
               <div className="mt-5 flex gap-2 border-t border-slate-100 pt-4">
-                <button type="button" className="btn-secondary !min-h-9 !px-3 !py-2 text-xs" onClick={() => startEdit(rule)}>Edit</button>
-                <button type="button" className="btn-secondary !min-h-9 !px-3 !py-2 text-xs text-rose-700 hover:text-rose-800" onClick={() => remove(rule)}><Trash2 size={14} /> Delete</button>
+                <button type="button" disabled={!canManage} className="btn-secondary !min-h-9 !px-3 !py-2 text-xs" onClick={() => startEdit(rule)}>Edit</button>
+                <button type="button" disabled={!canManage} className="btn-secondary !min-h-9 !px-3 !py-2 text-xs text-rose-700 hover:text-rose-800" onClick={() => remove(rule)}><Trash2 size={14} /> Delete</button>
               </div>
             </article>
           ))}

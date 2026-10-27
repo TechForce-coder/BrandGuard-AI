@@ -19,37 +19,7 @@ import { api } from '../api/api.js';
 import StatCard from '../components/StatCard.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { formatDateTime } from '../utils/formatDateTime.js';
-
-const rolePresentation = {
-  Creator: {
-    label: 'CREATOR WORKSPACE',
-    title: 'My Content Workspace',
-    description: 'Keep brand standards in view from first draft through final approval.',
-    contentTitle: 'Your content',
-    contentDescription: 'Open an item to see its status and continue the workflow.'
-  },
-  Reviewer: {
-    label: 'REVIEWER WORKSPACE',
-    title: 'Review Workspace',
-    description: 'Review submitted content and record decisions using the existing workflow.',
-    contentTitle: 'Submitted content',
-    contentDescription: 'Open a submission to review its findings and record a decision.'
-  },
-  Manager: {
-    label: 'MANAGER WORKSPACE',
-    title: 'Governance Overview',
-    description: 'Monitor workflow progress and content status across the workspace.',
-    contentTitle: 'Governed content',
-    contentDescription: 'Review content status and open an item to continue the workflow.'
-  },
-  Admin: {
-    label: 'ADMIN WORKSPACE',
-    title: 'Administration Overview',
-    description: 'Monitor content governance, policy findings, and workflow status.',
-    contentTitle: 'Content overview',
-    contentDescription: 'Review content status and open an item to continue the workflow.'
-  }
-};
+import { WORKSPACE_CONFIG } from '../utils/workspacePreview.js';
 
 const roleActions = {
   Creator: { label: 'Create content', to: '/drafts/new', icon: Plus },
@@ -58,7 +28,7 @@ const roleActions = {
   Admin: { label: 'Administration', to: '/settings', icon: Settings }
 };
 
-export default function Dashboard({ role, showDrafts = false }) {
+export default function Dashboard({ role, actualRole = role, previewMode = false, showDrafts = false }) {
   const [drafts, setDrafts] = useState([]);
   const [filter, setFilter] = useState(['Manager', 'Reviewer'].includes(role) ? 'Pending Approval' : 'All');
   const [search, setSearch] = useState('');
@@ -72,6 +42,12 @@ export default function Dashboard({ role, showDrafts = false }) {
   const navigate = useNavigate();
 
   const load = async () => {
+    if (previewMode) {
+      setDrafts([]);
+      setLoading(false);
+      setError('');
+      return;
+    }
     try {
       setLoading(true);
       setError('');
@@ -120,13 +96,19 @@ export default function Dashboard({ role, showDrafts = false }) {
 
   useEffect(() => {
     load();
-  }, [role]);
+  }, [role, previewMode]);
 
   useEffect(() => {
     setFilter(['Manager', 'Reviewer'].includes(role) ? 'Pending Approval' : 'All');
   }, [role]);
 
   useEffect(() => {
+    if (previewMode) {
+      setActivity([]);
+      setActivityError('');
+      setActivityLoading(false);
+      return undefined;
+    }
     if (!['Creator', 'Reviewer', 'Manager', 'Admin'].includes(role)) {
       setActivity([]);
       setActivityError('');
@@ -154,7 +136,7 @@ export default function Dashboard({ role, showDrafts = false }) {
     return () => {
       active = false;
     };
-  }, [role, activityRefresh]);
+  }, [role, activityRefresh, previewMode]);
 
   
 const visible = useMemo(() => {
@@ -203,17 +185,22 @@ const visible = useMemo(() => {
     (draft) => draft.status === 'Needs Changes'
   ).length;
   const flagged = drafts.filter((draft) => draft.findingsCount > 0).length;
-  const presentation = rolePresentation[role] || rolePresentation.Creator;
+  const presentation = WORKSPACE_CONFIG[role] || WORKSPACE_CONFIG.Creator;
   const action = roleActions[role] || roleActions.Creator;
   const ActionIcon = action.icon;
-  const dataUnavailable = loading || Boolean(error);
+  const dataUnavailable = previewMode || loading || Boolean(error);
 
   return (
     <div className="space-y-6">
+      {previewMode && (
+        <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Dashboard data is unavailable in this {role} preview. The signed-in {actualRole} account cannot access {role}-scoped data.
+        </p>
+      )}
       {showDrafts ? (
         <section className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
           <div>
-            <p className="section-kicker">{presentation.label}</p>
+            <p className="section-kicker">{presentation.dashboardLabel}</p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">
               {role === 'Creator' ? 'My Drafts' : presentation.contentTitle}
             </h1>
@@ -234,13 +221,13 @@ const visible = useMemo(() => {
           <div className="max-w-2xl">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-[11px] font-bold tracking-[.1em] text-blue-800">
               <Sparkles size={13} aria-hidden="true" />
-              {presentation.label}
+              {presentation.dashboardLabel}
             </span>
             <h1 className="mt-4 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
-              {presentation.title}
+              {presentation.dashboardTitle}
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base">
-              {presentation.description}
+              {presentation.dashboardDescription}
             </p>
           </div>
 
@@ -420,10 +407,12 @@ const visible = useMemo(() => {
                         <FileText size={21} aria-hidden="true" />
                       </span>
                       <p className="mt-3 font-semibold text-slate-800">
-                        {error ? 'Content unavailable' : loading ? 'Loading content…' : 'No content found'}
+                        {previewMode ? 'Workspace data unavailable in preview' : error ? 'Content unavailable' : loading ? 'Loading content…' : 'No content found'}
                       </p>
                       <p className="mt-1 text-sm text-slate-500">
-                        {error
+                        {previewMode
+                          ? 'Role-scoped content is not loaded in development preview.'
+                          : error
                           ? 'Workspace content could not be loaded.'
                           : loading
                             ? 'Content will appear here when available.'

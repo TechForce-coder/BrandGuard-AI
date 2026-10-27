@@ -2,37 +2,20 @@ import { useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity, BookOpen, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList,
-  FileText, LayoutDashboard, LogOut, Menu, Plus, Settings, ShieldCheck, Users, X
+  FileText, LayoutDashboard, LogOut, Menu, Plus, Settings, ShieldCheck, X
 } from 'lucide-react';
 import { api } from '../api/api.js';
+import { PREVIEW_ROLE_STORAGE_KEY, WORKSPACE_CONFIG } from '../utils/workspacePreview.js';
 
-const roleLinks = {
-  Creator: [
-    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/drafts', label: 'My Drafts', icon: FileText },
-    { to: '/drafts/new', label: 'Submit Content', icon: Plus }
-  ],
-  Reviewer: [
-    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/review', label: 'Review Queue', icon: ClipboardCheck },
-    { to: '/drafts', label: 'Submitted Content', icon: FileText },
-    { to: '/audit', label: 'Audit Log', icon: ClipboardList }
-  ],
-  Manager: [
-    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/review', label: 'Approval Workflow', icon: ClipboardCheck },
-    { to: '/rulebook', label: 'Guideline Library', icon: BookOpen },
-    { to: '/facts', label: 'Facts', icon: FileText },
-    { to: '/audit', label: 'Privacy & Audit Log', icon: ClipboardList }
-  ],
-  Admin: [
-    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/drafts', label: 'Content', icon: FileText },
-    { to: '/rulebook', label: 'Guideline Library', icon: BookOpen },
-    { to: '/facts', label: 'Facts', icon: FileText },
-    { to: '/audit', label: 'Audit Log', icon: ClipboardList },
-    { to: '/settings', label: 'Administration', icon: Settings }
-  ]
+const navigationIcons = {
+  '/': LayoutDashboard,
+  '/drafts': FileText,
+  '/drafts/new': Plus,
+  '/review': ClipboardCheck,
+  '/rulebook': BookOpen,
+  '/facts': FileText,
+  '/audit': ClipboardList,
+  '/settings': Settings
 };
 
 const roleDescriptions = {
@@ -42,20 +25,25 @@ const roleDescriptions = {
   Admin: 'Manage administration and workspace activity.'
 };
 
-export default function Layout({ role, actualRole, user, setUser, setRole, children }) {
+export default function Layout({ role, actualRole, previewMode = false, user, setUser, onLogoutError, workspaceNotice = '', children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const links = roleLinks[role] || roleLinks.Creator;
-  const changeRole = nextRole => {
-    setRole(nextRole);
-    setMobileOpen(false);
-    navigate('/');
-  };
-  const logout = () => {
+  const links = (WORKSPACE_CONFIG[role] || WORKSPACE_CONFIG.Creator).navigation.map(item => ({
+    ...item,
+    icon: navigationIcons[item.to]
+  }));
+  const logout = async () => {
     if (!user) return;
-    api.logout();
+    try {
+      await api.logout();
+    } catch (error) {
+      if (error.status !== 401) {
+        onLogoutError?.('You were signed out on this device, but the server could not invalidate your session. Try signing in again after service connectivity is restored.');
+      }
+    }
+    sessionStorage.removeItem(PREVIEW_ROLE_STORAGE_KEY);
     setUser(null);
     navigate('/login');
   };
@@ -78,22 +66,6 @@ export default function Layout({ role, actualRole, user, setUser, setRole, child
         </NavLink>
       ))}
     </nav>
-  );
-
-  const previewSelector = (mobile = false) => (
-    <label className={`role-preview ${mobile ? 'role-preview--mobile' : ''}`}>
-      <Users size={15} className="shrink-0 text-blue-700" aria-hidden="true" />
-      <span className="font-medium">Preview only</span>
-      <select
-        className="min-w-0 flex-1 bg-transparent font-semibold text-slate-800 outline-none"
-        value={role}
-        onChange={event => changeRole(event.target.value)}
-        aria-label="Preview workspace role"
-        title={`Preview workspace UI. Your account role is ${actualRole}; server permissions do not change.`}
-      >
-        {['Creator', 'Reviewer', 'Manager', 'Admin'].map(item => <option key={item}>{item}</option>)}
-      </select>
-    </label>
   );
 
   return (
@@ -128,7 +100,6 @@ export default function Layout({ role, actualRole, user, setUser, setRole, child
         <div className="sidebar-bottom">
           {!collapsed && (
             <>
-            {mobileOpen && previewSelector(true)}
               <div className="sidebar-account">
                 <span className="avatar-mark">{(user?.name || user?.email || 'U').slice(0, 1)}</span>
                 <span className="min-w-0 flex-1">
@@ -176,7 +147,7 @@ export default function Layout({ role, actualRole, user, setUser, setRole, child
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-slate-900">{role} workspace</p>
               <p className="hidden truncate text-xs text-slate-500 sm:block">
-                {role !== actualRole ? `Preview only · Account role: ${actualRole}` : roleDescriptions[role] || roleDescriptions.Creator}
+                {previewMode ? `Development preview · Actual account role: ${actualRole}` : roleDescriptions[role] || roleDescriptions.Creator}
               </p>
             </div>
           </div>
@@ -184,7 +155,7 @@ export default function Layout({ role, actualRole, user, setUser, setRole, child
             <span className="hidden items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 md:inline-flex">
               <Activity size={13} aria-hidden="true" /> Workspace
             </span>
-            <div className="hidden max-w-48 sm:block">{previewSelector()}</div>
+
             <div className="hidden min-w-0 items-center gap-2 border-l border-slate-200 pl-3 md:flex">
               <span className="avatar-mark">{(user?.name || user?.email || 'U').slice(0, 1)}</span>
               <span className="min-w-0">
@@ -199,6 +170,17 @@ export default function Layout({ role, actualRole, user, setUser, setRole, child
         </header>
 
         <main className="page-enter page-shell">
+          {previewMode && (
+            <div role="status" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              <strong>DEVELOPMENT PREVIEW — {role} workspace UI</strong>
+              <span className="ml-1">Signed in as {actualRole}. This preview does not grant {role} permissions; protected actions are disabled and backend access remains limited to your actual role.</span>
+            </div>
+          )}
+          {workspaceNotice && (
+            <p role="status" className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+              {workspaceNotice}
+            </p>
+          )}
           {children || <Outlet />}
         </main>
         <footer className="app-footer">

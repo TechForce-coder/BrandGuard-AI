@@ -105,16 +105,44 @@ function factContradictions(content, facts) {
 }
 
 function deterministicFindings(content, context = {}) {
-    return [
+    const findings = [
         ...ruleFindings(content, context.rules),
         ...factContradictions(content, context.facts)
     ];
+    if (context.hasImage) {
+        const altText = String(context.altText || "").trim();
+        const genericAltText = new Set(["image", "photo", "picture", "img"]);
+        let explanation = "";
+        if (!altText) {
+            explanation = "This post includes an image but has no alt-text.";
+        } else if (altText.length < 5 || altText.length > 125) {
+            explanation = `Alt-text must be between 5 and 125 characters (currently ${altText.length}).`;
+        } else if (genericAltText.has(altText.toLocaleLowerCase())) {
+            explanation = `"${altText}" does not describe the image.`;
+        }
+        if (explanation) {
+            findings.push({
+                type: "Accessibility",
+                quote: altText || "(missing alt-text)",
+                explanation,
+                suggestion: "Describe the meaningful visual content of the image in 5 to 125 characters.",
+                severity: "Medium",
+                source: "rule",
+                ruleId: "BG-11",
+                status: "Open",
+                field: "altText"
+            });
+        }
+    }
+    return findings;
 }
 
 function normalizeScanContext(context = {}) {
     return {
         facts: normalizeEntries(context.facts),
-        rules: normalizeEntries(context.rules)
+        rules: normalizeEntries(context.rules),
+        hasImage: context.hasImage === true,
+        altText: typeof context.altText === "string" ? context.altText : ""
     };
 }
 

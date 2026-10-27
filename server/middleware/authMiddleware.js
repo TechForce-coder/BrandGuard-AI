@@ -25,9 +25,9 @@ const authenticate = async (req, res, next) => {
 
     try {
         const user = await User.findById(decoded.userId)
-            .select("role organisationId");
+            .select("role organisationId tokenVersion");
 
-        if (!user) {
+        if (!user || Number(decoded.tokenVersion || 0) !== Number(user.tokenVersion || 0)) {
             return res.status(401).json({
                 success: false,
                 message: "Invalid or expired token"

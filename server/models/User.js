@@ -27,6 +27,11 @@ const userSchema = new mongoose.Schema(
             default: "creator"
         },
 
+        tokenVersion: {
+            type: Number,
+            default: 0
+        },
+
         organisationId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Organisation",

@@ -11,6 +11,8 @@ export function getDraftEditorState(draft, fallback = {}) {
     title: record.title ?? fallback.title ?? '',
     channel: record.channel ?? fallback.channel ?? '',
     content: record.content ?? fallback.content ?? '',
+    hasImage: record.hasImage ?? fallback.hasImage ?? false,
+    altText: record.altText ?? fallback.altText ?? '',
     findings: Array.isArray(record.findings)
       ? record.findings
       : fallback.findings || [],

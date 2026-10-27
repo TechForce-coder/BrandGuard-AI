@@ -1,5 +1,9 @@
 const API_URL = '/api';
 
+function clearSession() {
+  localStorage.removeItem('brandguard-token');
+}
+
 async function request(path, options = {}) {
   const token = localStorage.getItem('brandguard-token');
   const response = await fetch(`${API_URL}${path}`, {
@@ -20,6 +24,12 @@ async function request(path, options = {}) {
       body?.message || body?.error || `Request failed (${response.status})`
     );
     error.status = response.status;
+    if (response.status === 401 && token && path !== '/auth/login') {
+      clearSession();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('brandguard:session-expired'));
+      }
+    }
     throw error;
   }
 
@@ -41,12 +51,25 @@ function normalizeDraft(draft) {
 
 export const api = {
   async login(email, password) {
+    clearSession();
     const result = await request('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password })
     });
-    if (result?.token) localStorage.setItem('brandguard-token', result.token);
-    return result;
+    if (typeof result?.token !== 'string' || !result.token) {
+      throw new Error('The server did not create an authenticated session.');
+    }
+    localStorage.setItem('brandguard-token', result.token);
+    try {
+      const user = await api.me();
+      if (!user || !['creator', 'reviewer', 'manager', 'admin'].includes(String(user.role || '').toLowerCase())) {
+        throw new Error('The server returned an invalid user profile.');
+      }
+      return { user };
+    } catch (error) {
+      clearSession();
+      throw error;
+    }
   },
 
   async me() {
@@ -54,8 +77,20 @@ export const api = {
     return result?.user || null;
   },
 
-  logout() {
-    localStorage.removeItem('brandguard-token');
+  hasSession() {
+    return Boolean(localStorage.getItem('brandguard-token'));
+  },
+
+  clearSession,
+
+  async logout() {
+    try {
+      if (api.hasSession()) {
+        await request('/auth/logout', { method: 'POST', body: JSON.stringify({}) });
+      }
+    } finally {
+      clearSession();
+    }
   },
 
   async getDrafts() {
@@ -81,7 +116,9 @@ export const api = {
     const payload = {
       title: draft.title,
       content: draft.content ?? draft.text ?? '',
-      channel: draft.channel || 'Website'
+      channel: draft.channel || 'Website',
+      hasImage: draft.hasImage === true,
+      altText: draft.altText || ''
     };
     const result = draft.id
       ? await request(`/drafts/${encodeURIComponent(draft.id)}`, {

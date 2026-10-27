@@ -145,7 +145,8 @@ const login = async (req, res) => {
             {
                 userId: user._id.toString(),
                 organisationId: user.organisationId.toString(),
-                role: user.role
+                role: user.role,
+                tokenVersion: user.tokenVersion || 0
             },
             process.env.JWT_SECRET,
             { expiresIn: "1h" }
@@ -177,7 +178,7 @@ const login = async (req, res) => {
 const getMe = async (req, res) => {
     try {
         const user = await User.findById(req.user.userId)
-            .select("-password");
+            .select("-password -tokenVersion");
 
         if (!user) {
             return res.status(404).json({
@@ -198,4 +199,27 @@ const getMe = async (req, res) => {
     }
 };
 
-module.exports = { register , login, getMe};
+const logout = async (req, res) => {
+    try {
+        const user = await User.findByIdAndUpdate(
+            req.user.userId,
+            { $inc: { tokenVersion: 1 } },
+            { new: true }
+        );
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid or expired session"
+            });
+        }
+        return res.status(204).end();
+    } catch (error) {
+        console.error("Logout error:", error.message);
+        return res.status(503).json({
+            success: false,
+            message: "Unable to invalidate the session. Please try again."
+        });
+    }
+};
+
+module.exports = { register, login, getMe, logout };

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ArrowRight, Check, Eye, EyeOff, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react';
 import { api } from '../api/api.js';
 
-export default function Login({ onLogin, sessionError = '' }) {
+export default function Login({ onLogin, sessionError = '', developmentPreviewEnabled = false }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [previewRole, setPreviewRole] = useState('Creator');
@@ -56,7 +56,7 @@ export default function Login({ onLogin, sessionError = '' }) {
           <p className="mt-2 text-sm leading-6 text-slate-500">Sign in to continue to your brand governance workspace.</p>
           <label className="mt-7 block text-sm font-semibold text-slate-800">
             Work email
-            <input className="field mt-2" type="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)} />
+            <input className="field mt-2" type="email" autoComplete="username" required disabled={busy} value={email} onChange={event => setEmail(event.target.value)} />
           </label>
           <label className="mt-4 block text-sm font-semibold text-slate-800">
             Password
@@ -66,11 +66,13 @@ export default function Login({ onLogin, sessionError = '' }) {
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
                 required
+                disabled={busy}
                 value={password}
                 onChange={event => setPassword(event.target.value)}
               />
               <button
                 type="button"
+                disabled={busy}
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
                 className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-400 transition hover:text-slate-600"
                 onClick={() => setShowPassword(value => !value)}
@@ -85,16 +87,22 @@ export default function Login({ onLogin, sessionError = '' }) {
               className="field mt-2"
               value={previewRole}
               onChange={event => setPreviewRole(event.target.value)}
-              aria-label="Preview workspace role after sign in"
+              disabled={busy || !developmentPreviewEnabled}
+              aria-label="Workspace preview after sign in"
             >
-              {['Creator', 'Reviewer', 'Manager', 'Admin'].map(item => <option key={item}>{item}</option>)}
+              {['Creator', 'Reviewer', 'Manager', 'Admin'].map(role => (
+                <option key={role} value={role}>{role}</option>
+              ))}
             </select>
             <span className="mt-1.5 block text-xs font-normal leading-5 text-slate-500">
               Preview only. Your account role and permissions are set by your organization.
+              {developmentPreviewEnabled
+                ? ' Development workspace preview is enabled for layout inspection only.'
+                : ' Layout preview is disabled unless explicitly enabled in development.'}
             </span>
           </label>
           {(error || sessionError) && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-sm text-rose-800">{error || sessionError}</p>}
-          <button disabled={busy} className="btn-primary mt-6 w-full justify-center py-3">
+          <button type="submit" disabled={busy} className="btn-primary mt-6 w-full justify-center py-3">
             {busy ? 'Signing in…' : 'Sign in'} <ArrowRight size={16} />
           </button>
           <div className="mt-5 flex items-start gap-2.5 rounded-xl bg-slate-50 p-3.5 text-xs leading-5 text-slate-500">

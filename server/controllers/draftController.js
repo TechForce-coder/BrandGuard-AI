@@ -18,7 +18,7 @@ const allowedChannels = new Set([
 // Create a new draft
 const createDraft = async (req, res) => {
     try {
-        const { title, content, channel } = req.body;
+        const { title, content, channel, hasImage, altText } = req.body;
 
         if (typeof title !== "string" || !title.trim()) {
             return res.status(400).json({
@@ -39,11 +39,31 @@ const createDraft = async (req, res) => {
                 message: "Select a supported content channel"
             });
         }
+        if (hasImage !== undefined && typeof hasImage !== "boolean") {
+            return res.status(400).json({
+                success: false,
+                message: "hasImage must be a boolean"
+            });
+        }
+        if (altText !== undefined && typeof altText !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Alt-text must be a string"
+            });
+        }
+        if (typeof altText === "string" && altText.length > 300) {
+            return res.status(400).json({
+                success: false,
+                message: "Alt-text must be 300 characters or fewer"
+            });
+        }
 
         const draft = await Draft.create({
             title: title.trim(),
             content: content || "",
             channel: channel || "Website",
+            hasImage: hasImage || false,
+            altText: altText || "",
             author: req.user.userId,
             organisationId: req.user.organisationId
         });
@@ -215,7 +235,7 @@ const getDraftById = async (req, res) => {
 
 const updateDraft = async (req, res) => {
     try {
-        const { title, content, channel } = req.body;
+        const { title, content, channel, hasImage, altText } = req.body;
 
         if (typeof title !== "string" || !title.trim()) {
             return res.status(400).json({
@@ -234,6 +254,24 @@ const updateDraft = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: "Select a supported content channel"
+            });
+        }
+        if (hasImage !== undefined && typeof hasImage !== "boolean") {
+            return res.status(400).json({
+                success: false,
+                message: "hasImage must be a boolean"
+            });
+        }
+        if (altText !== undefined && typeof altText !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Alt-text must be a string"
+            });
+        }
+        if (typeof altText === "string" && altText.length > 300) {
+            return res.status(400).json({
+                success: false,
+                message: "Alt-text must be 300 characters or fewer"
             });
         }
 
@@ -267,17 +305,23 @@ const updateDraft = async (req, res) => {
         const newContent = content || "";
         const newTitle = title.trim();
         const newChannel = channel || "Website";
+        const newHasImage = hasImage ?? draft.hasImage;
+        const newAltText = altText === undefined ? draft.altText : altText.trim();
 
         // Check whether the actual draft content changed
         const contentChanged =
             draft.title !== newTitle ||
             draft.content !== newContent ||
-            draft.channel !== newChannel;
+            draft.channel !== newChannel ||
+            draft.hasImage !== newHasImage ||
+            draft.altText !== newAltText;
         const previousStatus = draft.status;
 
         draft.title = newTitle;
         draft.content = newContent;
         draft.channel = newChannel;
+        draft.hasImage = newHasImage;
+        draft.altText = newAltText;
 
         // Reset scan and approval data only when something changes
 
@@ -382,7 +426,9 @@ const scanDraft = async (req, res) => {
             ]);
             result = await geminiService.scanContent(draft.content, draft.title, {
                 facts,
-                rules
+                rules,
+                hasImage: draft.hasImage,
+                altText: draft.altText
             });
         } catch (error) {
             await recordAudit({

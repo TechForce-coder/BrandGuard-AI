@@ -3,10 +3,17 @@ import { CalendarClock, FileCheck2, Plus, Trash2, X } from 'lucide-react';
 import { api } from '../api/api.js';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { formatDateTime } from '../utils/formatDateTime.js';
+import { canMutateInWorkspace } from '../utils/workspacePreview.js';
 
 const emptyForm = { title: '', owner: '', validUntil: '', status: 'Active' };
 
-export default function Facts() {
+function getFactStatus(fact) {
+  if (fact.status === 'Inactive') return 'Inactive';
+  if (fact.validUntil && new Date(fact.validUntil).getTime() < Date.now()) return 'Expired';
+  return fact.status || 'Active';
+}
+
+export default function Facts({ actualRole = '', previewMode = false }) {
   const [facts, setFacts] = useState([]);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -16,6 +23,8 @@ export default function Facts() {
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState('');
   const [formOpen, setFormOpen] = useState(false);
+  const canManage = canMutateInWorkspace(previewMode) &&
+    ['manager', 'admin'].includes(String(actualRole).toLowerCase());
 
   useEffect(() => {
     let active = true;
@@ -29,6 +38,7 @@ export default function Facts() {
   }, [refreshKey]);
 
   const startCreate = () => {
+    if (!canManage) return;
     setEditingId('');
     setForm(emptyForm);
     setFormOpen(true);
@@ -36,6 +46,7 @@ export default function Facts() {
   };
 
   const startEdit = fact => {
+    if (!canManage) return;
     setEditingId(String(fact._id || fact.id));
     setForm({
       title: fact.title || fact.name || '',
@@ -49,6 +60,10 @@ export default function Facts() {
 
   const save = async event => {
     event.preventDefault();
+    if (!canManage) {
+      setError('Fact changes are disabled in development workspace preview.');
+      return;
+    }
     setSaving(true);
     setError('');
     setMessage('');
@@ -69,6 +84,7 @@ export default function Facts() {
   };
 
   const remove = async fact => {
+    if (!canManage) return;
     const id = String(fact._id || fact.id || '');
     if (!id || !window.confirm(`Delete "${fact.title || fact.name || 'this fact'}"?`)) return;
     setError('');
@@ -90,7 +106,7 @@ export default function Facts() {
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Approved Facts</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Manage approved claims and supporting references for use in brand content.</p>
         </div>
-        <button type="button" className="btn-primary shrink-0" onClick={startCreate}>
+        <button type="button" disabled={!canManage} className="btn-primary shrink-0" onClick={startCreate}>
           <Plus size={16} aria-hidden="true" /> Add fact
         </button>
       </header>
@@ -115,25 +131,25 @@ export default function Facts() {
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-sm font-medium text-slate-700">
               Fact or reference
-              <input className="field mt-1.5" required maxLength={200} value={form.title} onChange={event => setForm(previous => ({ ...previous, title: event.target.value }))} />
+              <input className="field mt-1.5" required disabled={!canManage} maxLength={200} value={form.title} onChange={event => setForm(previous => ({ ...previous, title: event.target.value }))} />
             </label>
             <label className="block text-sm font-medium text-slate-700">
               Owner
-              <input className="field mt-1.5" maxLength={160} value={form.owner} onChange={event => setForm(previous => ({ ...previous, owner: event.target.value }))} />
+              <input className="field mt-1.5" disabled={!canManage} maxLength={160} value={form.owner} onChange={event => setForm(previous => ({ ...previous, owner: event.target.value }))} />
             </label>
             <label className="block text-sm font-medium text-slate-700">
               Valid until
-              <input className="field mt-1.5" type="date" value={form.validUntil} onChange={event => setForm(previous => ({ ...previous, validUntil: event.target.value }))} />
+              <input className="field mt-1.5" disabled={!canManage} type="date" value={form.validUntil} onChange={event => setForm(previous => ({ ...previous, validUntil: event.target.value }))} />
             </label>
             <label className="block text-sm font-medium text-slate-700">
               Status
-              <select className="field mt-1.5" value={form.status} onChange={event => setForm(previous => ({ ...previous, status: event.target.value }))}>
+              <select className="field mt-1.5" disabled={!canManage} value={form.status} onChange={event => setForm(previous => ({ ...previous, status: event.target.value }))}>
                 {['Active', 'Valid', 'Expired', 'Inactive'].map(status => <option key={status}>{status}</option>)}
               </select>
             </label>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving…' : editingId ? 'Save changes' : 'Save fact'}</button>
+            <button type="submit" disabled={!canManage || saving} className="btn-primary">{saving ? 'Saving…' : editingId ? 'Save changes' : 'Save fact'}</button>
             <button type="button" disabled={saving} className="btn-secondary" onClick={() => setFormOpen(false)}>Cancel</button>
           </div>
         </form>
@@ -162,11 +178,11 @@ export default function Facts() {
                   <td className="whitespace-nowrap px-5 py-4 text-slate-600">
                     <span className="flex items-center gap-2"><CalendarClock size={15} className="text-slate-400" />{fact.validUntil || fact.valid_until ? formatDateTime(fact.validUntil || fact.valid_until) : '—'}</span>
                   </td>
-                  <td className="px-5 py-4"><StatusBadge status={fact.status || 'Active'} /></td>
+                  <td className="px-5 py-4"><StatusBadge status={getFactStatus(fact)} /></td>
                   <td className="px-5 py-4">
                     <div className="flex gap-2">
-                      <button type="button" className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs" onClick={() => startEdit(fact)}>Edit</button>
-                      <button type="button" className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs text-rose-700 hover:text-rose-800" onClick={() => remove(fact)} aria-label={`Delete ${fact.title || 'fact'}`}><Trash2 size={14} /></button>
+                      <button type="button" disabled={!canManage} className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs" onClick={() => startEdit(fact)}>Edit</button>
+                      <button type="button" disabled={!canManage} className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs text-rose-700 hover:text-rose-800" onClick={() => remove(fact)} aria-label={`Delete ${fact.title || 'fact'}`}><Trash2 size={14} /></button>
                     </div>
                   </td>
                 </tr>

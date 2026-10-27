@@ -5,10 +5,11 @@ import { api } from '../api/api.js';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { formatDateTime } from '../utils/formatDateTime.js';
 import { getReviewQueueActions, submitReviewQueueAction } from '../utils/reviewQueueWorkflow.js';
+import { canMutateInWorkspace } from '../utils/workspacePreview.js';
 
 const filters = ['Pending Approval', 'Needs Changes', 'Approved', 'All'];
 
-export default function Review({ role }) {
+export default function Review({ role, actualRole = role, previewMode = false }) {
   const [drafts, setDrafts] = useState([]);
   const [filter, setFilter] = useState('Pending Approval');
   const [search, setSearch] = useState('');
@@ -22,6 +23,12 @@ export default function Review({ role }) {
 
   useEffect(() => {
     let active = true;
+    if (previewMode) {
+      setDrafts([]);
+      setLoading(false);
+      setError('');
+      return () => { active = false; };
+    }
     setLoading(true);
     setError('');
     api.getDrafts()
@@ -35,8 +42,13 @@ export default function Review({ role }) {
     (filter === 'All' || draft.status === filter) &&
     `${draft.title || ''} ${draft.author || ''} ${draft.id || ''}`.toLowerCase().includes(search.toLowerCase())
   ), [drafts, filter, search]);
+  const dataUnavailable = previewMode || loading || Boolean(error);
 
   async function handleReview(draft, action) {
+    if (!canMutateInWorkspace(previewMode)) {
+      setError(`Review decisions are disabled in development preview. The authenticated account role is ${actualRole}.`);
+      return;
+    }
     try {
       setReviewingId(draft.id);
       setError('');
@@ -66,6 +78,7 @@ export default function Review({ role }) {
         <p className="section-kicker">{role} workspace</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Review Queue</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Inspect submitted content, review its findings, and record an approval decision.</p>
+        {previewMode && <p role="status" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Review queue data is unavailable in this preview. The signed-in {actualRole} account cannot access reviewer-scoped submissions.</p>}
       </div>
       {error && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
@@ -78,15 +91,15 @@ export default function Review({ role }) {
       <div className="grid gap-4 md:grid-cols-3">
         <div className="surface-card p-4">
           <p className="text-[11px] font-semibold uppercase tracking-[.1em] text-slate-500">In queue</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">{loading || error ? '—' : drafts.filter(item => item.status === 'Pending Approval').length}</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{dataUnavailable ? '—' : drafts.filter(item => item.status === 'Pending Approval').length}</p>
         </div>
         <div className="surface-card p-4">
           <p className="text-[11px] font-semibold uppercase tracking-[.1em] text-slate-500">Needs changes</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">{loading || error ? '—' : drafts.filter(item => item.status === 'Needs Changes').length}</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{dataUnavailable ? '—' : drafts.filter(item => item.status === 'Needs Changes').length}</p>
         </div>
         <div className="surface-card p-4">
           <p className="text-[11px] font-semibold uppercase tracking-[.1em] text-slate-500">Approved</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">{loading || error ? '—' : drafts.filter(item => item.status === 'Approved').length}</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{dataUnavailable ? '—' : drafts.filter(item => item.status === 'Approved').length}</p>
         </div>
       </div>
 
@@ -95,7 +108,9 @@ export default function Review({ role }) {
           <div>
             <h2 className="text-base font-semibold text-slate-950">Submitted content</h2>
             <p className="mt-1 text-sm text-slate-500">
-              {loading
+              {previewMode
+                ? 'Review data unavailable in preview'
+                : loading
                 ? 'Loading submissions…'
                 : error
                   ? 'Submissions unavailable'
@@ -141,7 +156,7 @@ export default function Review({ role }) {
                           className={action === 'approve'
                             ? 'btn-primary !min-h-8 !px-3 !py-1.5 !text-xs'
                             : 'btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs'}
-                          disabled={reviewingId === draft.id}
+                          disabled={previewMode || reviewingId === draft.id}
                           onClick={() => handleReview(draft, action)}
                         >
                           {action === 'approve' ? <CheckCircle2 size={14} /> : <RotateCcw size={14} />}
@@ -161,7 +176,7 @@ export default function Review({ role }) {
                           }))}
                           placeholder="Comment required to request changes"
                           aria-label={`Review comment for ${draft.title}`}
-                          disabled={reviewingId === draft.id}
+                          disabled={previewMode || reviewingId === draft.id}
                         />
                       </label>
                     )}
@@ -174,8 +189,8 @@ export default function Review({ role }) {
           {!loading && !error && rows.length === 0 && (
             <div className="px-5 py-14 text-center">
               <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-800"><ClipboardCheck size={21} /></span>
-              <p className="mt-3 text-sm font-semibold text-slate-800">No items in this view</p>
-              <p className="mt-1 text-sm text-slate-500">Try another status or search term. New submissions will appear here.</p>
+              <p className="mt-3 text-sm font-semibold text-slate-800">{previewMode ? 'Queue data unavailable in preview' : 'No items in this view'}</p>
+              <p className="mt-1 text-sm text-slate-500">{previewMode ? 'No reviewer-scoped submissions are loaded in a development preview.' : 'Try another status or search term. New submissions will appear here.'}</p>
             </div>
           )}
         </div>

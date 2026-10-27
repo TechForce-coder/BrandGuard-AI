@@ -98,6 +98,144 @@ test("draft list API rejects successful responses with an unexpected shape", asy
     }
 });
 
+test("frontend login uses the verified profile returned by the authenticated session endpoint", async () => {
+    const { api } = await import("../../client/src/api/api.js");
+    const originalFetch = global.fetch;
+    const originalLocalStorage = global.localStorage;
+    const values = new Map();
+    global.localStorage = {
+        getItem: key => values.get(key) || null,
+        setItem: (key, value) => values.set(key, value),
+        removeItem: key => values.delete(key)
+    };
+    const requests = [];
+    global.fetch = async (url, options) => {
+        requests.push({ url, options });
+        return {
+            ok: true,
+            status: 200,
+            json: async () => url.endsWith("/auth/login")
+                ? { success: true, token: "verified-session-token", user: { role: "creator" } }
+                : { success: true, user: { id: "manager-account", role: "manager" } }
+        };
+    };
+
+    try {
+        const result = await api.login("member@example.test", "valid-password");
+        assert.equal(result.user.id, "manager-account");
+        assert.equal(result.user.role, "manager");
+        assert.equal(values.get("brandguard-token"), "verified-session-token");
+        assert.equal(requests.length, 2);
+        assert.equal(requests[0].url, "/api/auth/login");
+        assert.equal(requests[1].url, "/api/auth/me");
+        assert.equal(requests[1].options.headers.Authorization, "Bearer verified-session-token");
+    } finally {
+        global.fetch = originalFetch;
+        if (originalLocalStorage === undefined) delete global.localStorage;
+        else global.localStorage = originalLocalStorage;
+    }
+});
+
+test("frontend login clears a token when the authenticated profile cannot be verified", async () => {
+    const { api } = await import("../../client/src/api/api.js");
+    const originalFetch = global.fetch;
+    const originalLocalStorage = global.localStorage;
+    const values = new Map();
+    global.localStorage = {
+        getItem: key => values.get(key) || null,
+        setItem: (key, value) => values.set(key, value),
+        removeItem: key => values.delete(key)
+    };
+    global.fetch = async url => ({
+        ok: url.endsWith("/auth/login"),
+        status: url.endsWith("/auth/login") ? 200 : 503,
+        json: async () => url.endsWith("/auth/login")
+            ? { success: true, token: "unverified-session-token" }
+            : { success: false, message: "Profile unavailable" }
+    });
+
+    try {
+        await assert.rejects(api.login("member@example.test", "valid-password"), /Profile unavailable/);
+        assert.equal(values.has("brandguard-token"), false);
+    } finally {
+        global.fetch = originalFetch;
+        if (originalLocalStorage === undefined) delete global.localStorage;
+        else global.localStorage = originalLocalStorage;
+    }
+});
+
+test("development workspace selection is presentation-only and disables preview mutations", async () => {
+    const {
+        canMutateInWorkspace,
+        isWorkspacePreviewEnabled,
+        resolveWorkspaceSelection
+    } = await import("../../client/src/utils/workspacePreview.js");
+
+    assert.equal(isWorkspacePreviewEnabled(true, "true"), true);
+    assert.equal(isWorkspacePreviewEnabled(true, "false"), false);
+    assert.equal(isWorkspacePreviewEnabled(true, undefined), false);
+    assert.equal(isWorkspacePreviewEnabled(false, "true"), false);
+
+    const managerPreview = resolveWorkspaceSelection("creator", "Manager", true);
+    assert.deepEqual(managerPreview, {
+        actualRole: "Creator",
+        workspaceRole: "Manager",
+        previewMode: true
+    });
+    assert.equal(canMutateInWorkspace(managerPreview.previewMode), false);
+    for (const role of ["Creator", "Reviewer", "Manager", "Admin"]) {
+        const selection = resolveWorkspaceSelection("creator", role, true);
+        assert.equal(selection.actualRole, "Creator");
+        assert.equal(selection.workspaceRole, role);
+        assert.equal(selection.previewMode, role !== "Creator");
+        assert.equal(canMutateInWorkspace(selection.previewMode), role === "Creator");
+    }
+    assert.deepEqual(resolveWorkspaceSelection("manager", "Manager", true), {
+        actualRole: "Manager",
+        workspaceRole: "Manager",
+        previewMode: false
+    });
+    assert.deepEqual(resolveWorkspaceSelection("creator", "Manager", false), {
+        actualRole: "Creator",
+        workspaceRole: "Creator",
+        previewMode: false
+    });
+    assert.equal(canMutateInWorkspace(false), true);
+
+    const { WORKSPACE_CONFIG } = await import("../../client/src/utils/workspacePreview.js");
+    const expectedNavigation = {
+        Creator: [["/", "Dashboard"], ["/drafts", "My Drafts"], ["/drafts/new", "Submit Content"]],
+        Reviewer: [["/", "Dashboard"], ["/review", "Review Queue"], ["/drafts", "Submitted Content"], ["/audit", "Audit Log"]],
+        Manager: [["/", "Dashboard"], ["/review", "Approval Workflow"], ["/rulebook", "Guideline Library"], ["/facts", "Facts"], ["/audit", "Privacy & Audit Log"]],
+        Admin: [["/", "Dashboard"], ["/drafts", "Content"], ["/rulebook", "Guideline Library"], ["/facts", "Facts"], ["/audit", "Audit Log"], ["/settings", "Administration"]]
+    };
+    for (const role of ["Creator", "Reviewer", "Manager", "Admin"]) {
+        const selectedWorkspace = resolveWorkspaceSelection("creator", role, true).workspaceRole;
+        const config = WORKSPACE_CONFIG[selectedWorkspace];
+        assert.ok(config.dashboardTitle);
+        assert.deepEqual(config.navigation.map(item => [item.to, item.label]), expectedNavigation[role]);
+    }
+    assert.equal(WORKSPACE_CONFIG.Manager.dashboardTitle, "Governance Overview");
+    assert.ok(WORKSPACE_CONFIG.Manager.navigation.some(item =>
+        item.to === "/review" && item.label === "Approval Workflow"
+    ));
+    assert.ok(WORKSPACE_CONFIG.Manager.navigation.some(item => item.to === "/rulebook"));
+    assert.ok(WORKSPACE_CONFIG.Manager.navigation.some(item => item.to === "/facts"));
+    assert.ok(WORKSPACE_CONFIG.Manager.navigation.some(item => item.to === "/audit"));
+    assert.notEqual(WORKSPACE_CONFIG.Manager.dashboardTitle, WORKSPACE_CONFIG.Creator.dashboardTitle);
+
+    const creatorToken = tokenForRole("creator", "preview-creator");
+    const protectedMutation = await fetch(`${baseUrl}/api/facts`, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${creatorToken}`,
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ title: "Not authorized by preview selection" })
+    });
+    assert.equal(protectedMutation.status, 403);
+});
+
 test("unknown API routes return JSON 404 instead of the SPA", async () => {
     const response = await fetch(`${baseUrl}/api/not-implemented`, {
         headers: { Accept: "text/html" }
@@ -226,6 +364,40 @@ test("authentication reports an account lookup outage instead of treating it as 
         });
         assert.equal(response.status, 503);
         assert.equal((await response.json()).message, "Authentication service temporarily unavailable");
+    });
+});
+
+test("authenticated logout revokes the current token on the server", async () => {
+    const userId = "logout-test-user";
+    const organisationId = "logout-test-organisation";
+    const account = { _id: userId, organisationId, role: "creator", tokenVersion: 0 };
+    testUsers.set(userId, account);
+    const token = jwt.sign({
+        userId,
+        organisationId,
+        role: "creator",
+        tokenVersion: account.tokenVersion
+    }, process.env.JWT_SECRET);
+
+    await withStubs([
+        [User, {
+            findByIdAndUpdate: async (id, update) => {
+                assert.equal(String(id), userId);
+                account.tokenVersion += update.$inc.tokenVersion;
+                return account;
+            }
+        }]
+    ], async () => {
+        const signedOut = await fetch(`${baseUrl}/api/auth/logout`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        assert.equal(signedOut.status, 204);
+
+        const reusedToken = await fetch(`${baseUrl}/api/drafts`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        assert.equal(reusedToken.status, 401);
     });
 });
 
@@ -486,6 +658,7 @@ test("catalog list, update, and delete remain organization scoped and audited", 
 test("draft lifecycle enforces roles and records workflow history", async () => {
     const events = [];
     let draft;
+    let scanContext;
     await withStubs([
         [Draft, {
             create: async payload => {
@@ -566,14 +739,17 @@ test("draft lifecycle enforces roles and records workflow history", async () => 
             })
         }],
         [geminiService, {
-            scanContent: async () => ({
+            scanContent: async (content, title, context) => {
+                scanContext = context;
+                return ({
                 findings: [{
                     type: "Unsupported claim",
                     quote: "Guaranteed result",
                     explanation: "The claim requires evidence.",
                     status: "Open"
                 }]
-            })
+                });
+            }
         }]
     ], async () => {
         const send = (role, endpoint, method, body, userId, organisationId = "test-organisation") => fetch(`${baseUrl}${endpoint}`, {
@@ -588,9 +764,13 @@ test("draft lifecycle enforces roles and records workflow history", async () => 
         const created = await send("creator", "/api/drafts", "POST", {
             title: "Launch announcement",
             content: "Initial content",
-            channel: "Website"
+            channel: "Website",
+            hasImage: true,
+            altText: "image"
         }, "creator-id");
         assert.equal(created.status, 201);
+        assert.equal(draft.hasImage, true);
+        assert.equal(draft.altText, "image");
 
         const managerCannotSeeUnsubmittedDraft = await send(
             "manager",
@@ -616,13 +796,18 @@ test("draft lifecycle enforces roles and records workflow history", async () => 
         const saved = await send("creator", `/api/drafts/${draft._id}`, "PUT", {
             title: "Launch announcement",
             content: "Updated content",
-            channel: "Website"
+            channel: "Website",
+            hasImage: true,
+            altText: "Updated image alt-text"
         }, "creator-id");
         assert.equal(saved.status, 200);
+        assert.equal(draft.altText, "Updated image alt-text");
 
         const scanned = await send("creator", `/api/drafts/${draft._id}/scan`, "POST", {}, "creator-id");
         assert.equal(scanned.status, 200);
         assert.equal(draft.findings.length, 1);
+        assert.equal(scanContext.hasImage, true);
+        assert.equal(scanContext.altText, "Updated image alt-text");
 
         const finding = await send("creator", "/api/findings/0", "PATCH", {
             draftId: draft._id,

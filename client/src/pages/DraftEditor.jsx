@@ -13,8 +13,9 @@ import Editor from '../components/Editor.jsx';
 import FindingsPanel from '../components/FindingsPanel.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { getDraftEditorState, submitReviewComment } from '../utils/draftEditorWorkflow.js';
+import { canMutateInWorkspace } from '../utils/workspacePreview.js';
 
-export default function DraftEditor({ actualRole }) {
+export default function DraftEditor({ actualRole, workspaceRole = actualRole, previewMode = false }) {
   const { id } = useParams();
   const navigate = useNavigate();
 
@@ -23,6 +24,8 @@ export default function DraftEditor({ actualRole }) {
   const [title, setTitle] = useState('');
   const [channel, setChannel] = useState('');
   const [text, setText] = useState('');
+  const [hasImage, setHasImage] = useState(false);
+  const [altText, setAltText] = useState('');
   const [findings, setFindings] = useState([]);
   const [reviewHistory, setReviewHistory] = useState([]);
   const [status, setStatus] = useState('Draft');
@@ -37,8 +40,8 @@ export default function DraftEditor({ actualRole }) {
   const [message, setMessage] = useState('');
 
   const authenticatedRole = String(actualRole || '').toLowerCase();
-  const canReview = ['reviewer', 'manager', 'admin'].includes(authenticatedRole);
-  const readOnly = authenticatedRole !== 'creator' || (
+  const canReview = ['reviewer', 'manager', 'admin'].includes(String(workspaceRole || '').toLowerCase());
+  const readOnly = previewMode || authenticatedRole !== 'creator' || (
     Boolean(draftId) && !['Draft', 'Needs Changes'].includes(status)
   );
 
@@ -67,6 +70,8 @@ export default function DraftEditor({ actualRole }) {
       setTitle(editorState.title);
       setChannel(editorState.channel);
       setText(editorState.content);
+      setHasImage(editorState.hasImage);
+      setAltText(editorState.altText);
       setFindings(editorState.findings);
       setReviewHistory(editorState.reviewHistory);
       setStatus(editorState.status);
@@ -80,8 +85,14 @@ export default function DraftEditor({ actualRole }) {
     }
   }
 
-  async function handleSave() {
-    if (!title.trim() || !text.trim()) {
+  async function handleSave(options = {}) {
+    if (!canMutateInWorkspace(previewMode)) {
+      setError('Saving is disabled in development workspace preview.');
+      return null;
+    }
+    const { navigateAfter = true, content: contentOverride } = options;
+    const contentToSave = contentOverride ?? text;
+    if (!title.trim() || !contentToSave.trim()) {
       setError('Enter a title and draft content first.');
       return null;
     }
@@ -95,13 +106,17 @@ export default function DraftEditor({ actualRole }) {
         id: draftId || undefined,
         title,
         channel,
-        content: text,
+        content: contentToSave,
+        hasImage,
+        altText,
       });
       const editorState = getDraftEditorState(saved, {
         id: draftId,
         title,
         channel,
-        content: text,
+        content: contentToSave,
+        hasImage,
+        altText,
         findings,
         status,
         scanned,
@@ -124,6 +139,8 @@ export default function DraftEditor({ actualRole }) {
       setTitle(editorState.title);
       setChannel(editorState.channel);
       setText(editorState.content);
+      setHasImage(editorState.hasImage);
+      setAltText(editorState.altText);
       setStatus(editorState.status);
       setFindings(editorState.findings);
       setReviewHistory(editorState.reviewHistory);
@@ -132,6 +149,9 @@ export default function DraftEditor({ actualRole }) {
       setScanWarning(editorState.scanWarning);
 
       setMessage('Draft saved.');
+      if (navigateAfter && !id) {
+        navigate(`/drafts/${savedId}`, { replace: true });
+      }
       return { ...saved, id: savedId, ...editorState };
     } catch (err) {
       setError(err.message || 'Failed to save draft.');
@@ -141,13 +161,41 @@ export default function DraftEditor({ actualRole }) {
     }
   }
 
+  async function handleApplySuggestion(finding) {
+    if (!canMutateInWorkspace(previewMode)) {
+      setError('Applying suggestions is disabled in development workspace preview.');
+      return;
+    }
+    const quote = finding.quote;
+    if (typeof quote !== 'string' || !quote || typeof finding.suggestion !== 'string') {
+      setError('This finding does not have an applicable text suggestion.');
+      return;
+    }
+
+    const firstIndex = text.indexOf(quote);
+    if (firstIndex < 0 || text.indexOf(quote, firstIndex + quote.length) >= 0) {
+      setError('The quoted text is missing or appears more than once. Edit it manually to avoid changing the wrong passage.');
+      return;
+    }
+
+    const updatedText = `${text.slice(0, firstIndex)}${finding.suggestion}${text.slice(firstIndex + quote.length)}`;
+    const saved = await handleSave({ content: updatedText });
+    if (saved) {
+      setMessage('Suggested change saved. Run a fresh scan before submitting.');
+    }
+  }
+
   async function handleScan() {
+    if (!canMutateInWorkspace(previewMode)) {
+      setError('Scanning is disabled in development workspace preview.');
+      return;
+    }
     try {
       setScanning(true);
       setError('');
       setMessage('');
 
-      const saved = await handleSave();
+      const saved = await handleSave({ navigateAfter: false });
       if (!saved) return;
 
       const response = await api.scanDraft(saved.id, text);
@@ -169,6 +217,9 @@ export default function DraftEditor({ actualRole }) {
       setMessage(nextScanStatus === 'partial'
         ? 'Scan incomplete. Resolve the provider issue and run a complete scan before submitting.'
         : 'Draft scan completed.');
+      if (!id) {
+        navigate(`/drafts/${saved.id}`, { replace: true });
+      }
     } catch (err) {
       setError(err.message || 'Failed to scan draft.');
     } finally {
@@ -177,6 +228,10 @@ export default function DraftEditor({ actualRole }) {
   }
 
   async function handleDecision(finding, decision, reason = '') {
+    if (!canMutateInWorkspace(previewMode)) {
+      setError('Finding decisions are disabled in development workspace preview.');
+      return;
+    }
     try {
       if (decision === 'Disputed' && !reason.trim()) {
         setError('Please enter a reason to dispute this finding.');
@@ -208,6 +263,10 @@ export default function DraftEditor({ actualRole }) {
   }
 
   async function handleSubmit() {
+    if (!canMutateInWorkspace(previewMode)) {
+      setError('Submission is disabled in development workspace preview.');
+      return;
+    }
     if (!scanned) {
       setError('Run a scan on the latest saved draft before submitting.');
       return;
@@ -241,6 +300,10 @@ export default function DraftEditor({ actualRole }) {
   }
 
   async function handleComment(comment = '') {
+    if (!canMutateInWorkspace(previewMode)) {
+      setError('Comments are disabled in development workspace preview.');
+      return;
+    }
     try {
       setSaving(true);
       setError('');
@@ -256,6 +319,10 @@ export default function DraftEditor({ actualRole }) {
   }
 
   async function handleReview(decision, comments = '') {
+    if (!canMutateInWorkspace(previewMode)) {
+      setError('Review decisions are disabled in development workspace preview.');
+      return;
+    }
     if (decision === 'Needs Changes' && !comments.trim()) {
       setError('Add a comment explaining the requested changes.');
       return;
@@ -330,6 +397,7 @@ export default function DraftEditor({ actualRole }) {
               Edit your content and check it against your organisation's
               brand guidelines.
             </p>
+            {previewMode && <p className="mt-2 text-sm font-medium text-amber-800">Development preview is read-only. Protected content actions are disabled.</p>}
           </div>
 
           {scanStatus === 'partial' && (
@@ -443,6 +511,44 @@ export default function DraftEditor({ actualRole }) {
           </div>
         </div>
 
+        <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+            <input
+              type="checkbox"
+              checked={hasImage}
+              onChange={event => {
+                setHasImage(event.target.checked);
+                setScanned(false);
+                setScanStatus('not-scanned');
+                setScanWarning('');
+              }}
+              disabled={readOnly}
+            />
+            This content includes an image
+          </label>
+          {hasImage && (
+            <label htmlFor="draft-alt-text" className="block text-sm font-medium text-slate-700">
+              Image alt-text
+              <input
+                id="draft-alt-text"
+                type="text"
+                maxLength={300}
+                value={altText}
+                onChange={event => {
+                  setAltText(event.target.value);
+                  setScanned(false);
+                  setScanStatus('not-scanned');
+                  setScanWarning('');
+                }}
+                disabled={readOnly}
+                className="input mt-1.5 w-full"
+                placeholder="Describe the meaningful visual content"
+              />
+              <span className="mt-1 block text-xs font-normal text-slate-500">The scan checks that alt-text is descriptive and 5–125 characters long.</span>
+            </label>
+          )}
+        </div>
+
         {!readOnly && (
           <div className="flex flex-wrap gap-3">
             <button
@@ -531,6 +637,7 @@ export default function DraftEditor({ actualRole }) {
           <FindingsPanel
             findings={findings}
             onDecision={handleDecision}
+            onApplySuggestion={handleApplySuggestion}
             readOnly={readOnly}
           />
         ) : (
@@ -559,6 +666,7 @@ export default function DraftEditor({ actualRole }) {
               onReview={handleReview}
               onComment={handleComment}
               loading={saving}
+              previewMode={previewMode}
             />
           </section>
         )}
@@ -566,7 +674,7 @@ export default function DraftEditor({ actualRole }) {
   );
 }
 
-function ReviewActions({ onReview, onComment, loading }) {
+function ReviewActions({ onReview, onComment, loading, previewMode = false }) {
   const [comments, setComments] = useState('');
 
   return (
@@ -574,6 +682,7 @@ function ReviewActions({ onReview, onComment, loading }) {
       <textarea
         value={comments}
         onChange={(event) => setComments(event.target.value)}
+        disabled={previewMode}
         className="input min-h-24 w-full"
         placeholder="Add review comments (optional)"
       />
@@ -582,7 +691,7 @@ function ReviewActions({ onReview, onComment, loading }) {
         <button
           type="button"
           onClick={() => onComment(comments)}
-          disabled={loading || !comments.trim()}
+          disabled={previewMode || loading || !comments.trim()}
           className="btn-secondary"
         >
           Add comment
@@ -590,7 +699,7 @@ function ReviewActions({ onReview, onComment, loading }) {
         <button
           type="button"
           onClick={() => onReview('Approved', comments)}
-          disabled={loading}
+          disabled={previewMode || loading}
           className="btn-primary"
         >
           Approve
@@ -599,7 +708,7 @@ function ReviewActions({ onReview, onComment, loading }) {
         <button
           type="button"
           onClick={() => onReview('Needs Changes', comments)}
-          disabled={loading}
+          disabled={previewMode || loading}
           className="btn-secondary"
         >
           Request changes

@@ -68,11 +68,6 @@ a { color: inherit; text-decoration: none; }
   .sidebar-link--active { @apply bg-blue-50 font-semibold text-blue-900 hover:bg-blue-50 hover:text-blue-900; }
   .sidebar-link--collapsed { @apply justify-center px-0; }
   .sidebar-bottom { @apply space-y-3 border-t border-slate-100 p-3; }
-  .role-preview {
-    @apply flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] text-slate-600;
-  }
-  .role-preview select { @apply cursor-pointer; }
-  .role-preview--mobile { @apply mb-4; }
   .sidebar-account { @apply flex min-w-0 items-center gap-2.5 border-t border-slate-100 pt-3; }
   .avatar-mark {
     @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold uppercase text-blue-900;

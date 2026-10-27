@@ -37,6 +37,26 @@ test("direct negation of an approved fact is flagged and other-organization cont
     ), []);
 });
 
+test("image alt-text accessibility checks run only for image content", () => {
+    assert.deepEqual(
+        deterministicFindings("A caption.", { facts: [], rules: [] }),
+        []
+    );
+
+    const findings = deterministicFindings("A caption.", {
+        facts: [],
+        rules: [],
+        hasImage: true,
+        altText: "image"
+    });
+
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].type, "Accessibility");
+    assert.equal(findings[0].ruleId, "BG-11");
+    assert.equal(findings[0].field, "altText");
+    assert.match(findings[0].explanation, /does not describe the image/i);
+});
+
 test("provider prompt receives structured fact and rule context and rejects unknown citations", async () => {
     const originalApiKey = process.env.GEMINI_API_KEY;
     process.env.GEMINI_API_KEY = "test-only-key";
