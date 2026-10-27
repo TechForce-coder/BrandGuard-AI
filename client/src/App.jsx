@@ -29,7 +29,9 @@ export default function App() {
   const [selectedWorkspace,setSelectedWorkspace] = useState(null);
   const previewEnabled = isWorkspacePreviewEnabled(
     import.meta.env.DEV,
-    import.meta.env.VITE_ENABLE_WORKSPACE_PREVIEW
+    import.meta.env.PROD,
+    import.meta.env.VITE_ENABLE_WORKSPACE_PREVIEW,
+    window.location.hostname
   );
   const location = useLocation();
   useEffect(()=>{
@@ -79,7 +81,7 @@ export default function App() {
   if(loading) return <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">Loading BrandGuard…</div>;
   if(location.pathname==='/login') {
     if (user) return <Navigate to="/" replace />;
-    return <Login developmentPreviewEnabled={previewEnabled} sessionError={sessionError} onLogin={(profile, previewRole) => {
+    return <Login developmentPreviewEnabled={previewEnabled} sessionError={sessionError} onLogin={(profile, previewRole, accountCreated = false) => {
       setSessionError('');
       const selection = resolveWorkspaceSelection(profile?.role, previewRole, previewEnabled);
       setSelectedWorkspace(selection.workspaceRole);
@@ -88,11 +90,11 @@ export default function App() {
       } else {
         sessionStorage.removeItem(PREVIEW_ROLE_STORAGE_KEY);
       }
-      setWorkspaceNotice(
-        selection.actualRole && previewRole && selection.actualRole !== previewRole && !selection.previewMode
+      setWorkspaceNotice(accountCreated
+        ? 'Your Creator account and private workspace were created successfully.'
+        : selection.actualRole && previewRole && selection.actualRole !== previewRole && !selection.previewMode
           ? `You selected the ${previewRole} workspace, but your account is ${selection.actualRole}. Opening your authorized ${selection.actualRole} workspace.`
-          : ''
-      );
+          : '');
       setUser(profile);
     }} />;
   }

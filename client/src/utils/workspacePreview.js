@@ -58,8 +58,17 @@ export const WORKSPACE_CONFIG = {
   }
 };
 
-export function isWorkspacePreviewEnabled(isDevelopment, configurationValue) {
-  return isDevelopment === true && configurationValue === 'true';
+export function isWorkspacePreviewEnabled(isDevelopment, isProduction, configurationValue, hostname) {
+  const isLoopbackHost = ['localhost', '127.0.0.1', '::1', '[::1]']
+    .includes(String(hostname || '').toLowerCase());
+
+  return (isDevelopment === true || isProduction === true) &&
+    configurationValue === 'true' &&
+    isLoopbackHost;
+}
+
+export function isWorkspacePreviewSelectorDisabled(isBusy, previewEnabled) {
+  return isBusy || !previewEnabled;
 }
 
 export function normalizeWorkspaceRole(role) {

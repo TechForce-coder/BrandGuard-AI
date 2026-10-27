@@ -1,11 +1,16 @@
 import { useState } from 'react';
 import { ArrowRight, Check, Eye, EyeOff, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react';
 import { api } from '../api/api.js';
+import { isWorkspacePreviewSelectorDisabled } from '../utils/workspacePreview.js';
 
 export default function Login({ onLogin, sessionError = '', developmentPreviewEnabled = false }) {
   const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [organisationId, setOrganisationId] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [previewRole, setPreviewRole] = useState('Creator');
+  const [mode, setMode] = useState('login');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -15,8 +20,21 @@ export default function Login({ onLogin, sessionError = '', developmentPreviewEn
     setError('');
     setBusy(true);
     try {
+      if (mode === 'register') {
+        if (!organisationId.trim()) {
+          setError('Organisation ID is required.');
+          return;
+        }
+        if (password !== confirmPassword) {
+          setError('Passwords do not match.');
+          return;
+        }
+        const result = await api.register({ name, email, password, confirmPassword, organisationId });
+        onLogin(result.user, previewRole, true);
+        return;
+      }
       const result = await api.login(email, password);
-      onLogin(result.user, previewRole);
+      onLogin(result.user, previewRole, false);
     } catch (reason) {
       setError(reason.message);
     } finally {
@@ -52,11 +70,23 @@ export default function Login({ onLogin, sessionError = '', developmentPreviewEn
             <span className="text-xl font-semibold tracking-tight text-slate-950">BrandGuard</span>
           </div>
           <p className="text-xs font-semibold uppercase tracking-[.12em] text-blue-800">Secure workspace access</p>
-          <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Welcome back</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-500">Sign in to continue to your brand governance workspace.</p>
-          <label className="mt-7 block text-sm font-semibold text-slate-800">
+          <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-500">{mode === 'login' ? 'Sign in to continue to your brand governance workspace.' : 'Join your organisation and start with the Creator role.'}</p>
+          {mode === 'register' && (
+            <>
+              <label className="mt-5 block text-sm font-semibold text-slate-800">
+                Full name
+                <input className="field mt-2" type="text" autoComplete="name" minLength={2} maxLength={120} required disabled={busy} value={name} onChange={event => setName(event.target.value)} />
+              </label>
+              <label className="mt-4 block text-sm font-semibold text-slate-800">
+                Organisation ID
+                <input className="field mt-2" type="text" name="organisationId" autoComplete="off" required disabled={busy} value={organisationId} onChange={event => setOrganisationId(event.target.value)} />
+              </label>
+            </>
+          )}
+          <label className={`${mode === 'register' ? 'mt-4' : 'mt-7'} block text-sm font-semibold text-slate-800`}>
             Work email
-            <input className="field mt-2" type="email" autoComplete="username" required disabled={busy} value={email} onChange={event => setEmail(event.target.value)} />
+            <input className="field mt-2" type="email" autoComplete="username" maxLength={254} required disabled={busy} value={email} onChange={event => setEmail(event.target.value)} />
           </label>
           <label className="mt-4 block text-sm font-semibold text-slate-800">
             Password
@@ -64,7 +94,9 @@ export default function Login({ onLogin, sessionError = '', developmentPreviewEn
               <input
                 className="field pr-11"
                 type={showPassword ? 'text' : 'password'}
-                autoComplete="current-password"
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                minLength={mode === 'register' ? 8 : undefined}
+                maxLength={mode === 'register' ? 72 : undefined}
                 required
                 disabled={busy}
                 value={password}
@@ -81,13 +113,29 @@ export default function Login({ onLogin, sessionError = '', developmentPreviewEn
               </button>
             </div>
           </label>
+          {mode === 'register' && (
+            <label className="mt-4 block text-sm font-semibold text-slate-800">
+              Confirm password
+              <input
+                className="field mt-2"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                minLength={8}
+                maxLength={72}
+                required
+                disabled={busy}
+                value={confirmPassword}
+                onChange={event => setConfirmPassword(event.target.value)}
+              />
+            </label>
+          )}
           <label className="mt-4 block text-sm font-semibold text-slate-800">
             Workspace preview after sign in
             <select
               className="field mt-2"
               value={previewRole}
               onChange={event => setPreviewRole(event.target.value)}
-              disabled={busy || !developmentPreviewEnabled}
+              disabled={isWorkspacePreviewSelectorDisabled(busy, developmentPreviewEnabled)}
               aria-label="Workspace preview after sign in"
             >
               {['Creator', 'Reviewer', 'Manager', 'Admin'].map(role => (
@@ -103,8 +151,22 @@ export default function Login({ onLogin, sessionError = '', developmentPreviewEn
           </label>
           {(error || sessionError) && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-sm text-rose-800">{error || sessionError}</p>}
           <button type="submit" disabled={busy} className="btn-primary mt-6 w-full justify-center py-3">
-            {busy ? 'Signing in…' : 'Sign in'} <ArrowRight size={16} />
+            {busy ? (mode === 'login' ? 'Signing in…' : 'Creating account…') : (mode === 'login' ? 'Sign in' : 'Create account')} <ArrowRight size={16} />
           </button>
+          <p className="mt-4 text-center text-sm text-slate-600">
+            {mode === 'login' ? 'New to BrandGuard?' : 'Already have an account?'}{' '}
+            <button
+              type="button"
+              disabled={busy}
+              className="font-semibold text-blue-800 hover:text-blue-950 disabled:opacity-50"
+              onClick={() => {
+                setError('');
+                setMode(value => value === 'login' ? 'register' : 'login');
+              }}
+            >
+              {mode === 'login' ? 'Create account' : 'Sign in'}
+            </button>
+          </p>
           <div className="mt-5 flex items-start gap-2.5 rounded-xl bg-slate-50 p-3.5 text-xs leading-5 text-slate-500">
             <Check size={15} className="mt-0.5 shrink-0 text-blue-700" />
             <span>Use your organization credentials. Your account is managed by your organization.</span>

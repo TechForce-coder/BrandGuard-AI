@@ -50,6 +50,31 @@ function normalizeDraft(draft) {
 }
 
 export const api = {
+  async register({ name, email, password, confirmPassword, organisationId }) {
+    if (typeof organisationId !== 'string' || !organisationId.trim()) {
+      throw new Error('Organisation ID is required.');
+    }
+    clearSession();
+    const result = await request('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, password, confirmPassword, organisationId: organisationId.trim() })
+    });
+    if (typeof result?.token !== 'string' || !result.token) {
+      throw new Error('The server did not create an authenticated session.');
+    }
+    localStorage.setItem('brandguard-token', result.token);
+    try {
+      const user = await api.me();
+      if (!user || String(user.role || '').toLowerCase() !== 'creator') {
+        throw new Error('The server returned an invalid registration profile.');
+      }
+      return { user };
+    } catch (error) {
+      clearSession();
+      throw error;
+    }
+  },
+
   async login(email, password) {
     clearSession();
     const result = await request('/auth/login', {
@@ -100,6 +125,14 @@ export const api = {
       throw new Error('Drafts response was not in the expected format');
     }
     return drafts.map(normalizeDraft);
+  },
+
+  async getDashboardStats() {
+    const result = await request('/drafts/dashboard');
+    if (!result?.stats || typeof result.stats !== 'object') {
+      throw new Error('Dashboard stats response was not in the expected format');
+    }
+    return result.stats;
   },
 
   async getDraftActivity() {

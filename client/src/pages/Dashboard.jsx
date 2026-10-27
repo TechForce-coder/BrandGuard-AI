@@ -38,6 +38,9 @@ export default function Dashboard({ role, actualRole = role, previewMode = false
   const [activityError, setActivityError] = useState('');
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityRefresh, setActivityRefresh] = useState(0);
+  const [stats, setStats] = useState(null);
+  const [statsError, setStatsError] = useState('');
+  const [statsRefresh, setStatsRefresh] = useState(0);
 
   const navigate = useNavigate();
 
@@ -97,6 +100,22 @@ export default function Dashboard({ role, actualRole = role, previewMode = false
   useEffect(() => {
     load();
   }, [role, previewMode]);
+
+  useEffect(() => {
+    if (previewMode) {
+      setStats(null);
+      setStatsError('');
+      return undefined;
+    }
+
+    let active = true;
+    setStats(null);
+    setStatsError('');
+    api.getDashboardStats()
+      .then(result => { if (active) setStats(result); })
+      .catch(reason => { if (active) setStatsError(reason.message || 'Unable to load dashboard statistics.'); });
+    return () => { active = false; };
+  }, [role, previewMode, statsRefresh]);
 
   useEffect(() => {
     setFilter(['Manager', 'Reviewer'].includes(role) ? 'Pending Approval' : 'All');
@@ -173,22 +192,15 @@ const visible = useMemo(() => {
 }, [drafts, filter, search, role]);
 
 
-  const pending = drafts.filter(
-    (draft) => draft.status === 'Pending Approval'
-  ).length;
-
-  const reviewed = drafts.filter(
-    (draft) => draft.status === 'Approved'
-  ).length;
-
-  const needs = drafts.filter(
-    (draft) => draft.status === 'Needs Changes'
-  ).length;
-  const flagged = drafts.filter((draft) => draft.findingsCount > 0).length;
+  const pending = stats?.pendingReviews ?? 0;
+  const reviewed = stats?.approvedContent ?? 0;
+  const needs = stats?.needsChanges ?? 0;
+  const flagged = stats?.flaggedContent ?? 0;
   const presentation = WORKSPACE_CONFIG[role] || WORKSPACE_CONFIG.Creator;
   const action = roleActions[role] || roleActions.Creator;
   const ActionIcon = action.icon;
   const dataUnavailable = previewMode || loading || Boolean(error);
+  const statsUnavailable = previewMode || !stats || Boolean(statsError);
 
   return (
     <div className="space-y-6">
@@ -264,18 +276,24 @@ const visible = useMemo(() => {
           </button>
         </div>
       )}
+      {statsError && !previewMode && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+          <span>{statsError}</span>
+          <button type="button" className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs" onClick={() => setStatsRefresh(value => value + 1)}>Retry statistics</button>
+        </div>
+      )}
 
       {!showDrafts && <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Total content"
-          value={dataUnavailable ? '—' : drafts.length}
-          note="Items in this workspace"
+          value={statsUnavailable ? '—' : stats.totalContent}
+          note={role === 'Creator' ? 'Your content items' : 'Workspace content items'}
           icon={FileText}
         />
 
         <StatCard
           label="Pending reviews"
-          value={dataUnavailable ? '—' : pending}
+          value={statsUnavailable ? '—' : pending}
           note="Awaiting a review decision"
           accent="text-amber-600"
           icon={Clock3}
@@ -283,7 +301,7 @@ const visible = useMemo(() => {
 
         <StatCard
           label="Approved"
-          value={dataUnavailable ? '—' : reviewed}
+          value={statsUnavailable ? '—' : reviewed}
           note="Cleared through the workflow"
           accent="text-emerald-700"
           icon={CheckCircle2}
@@ -291,7 +309,7 @@ const visible = useMemo(() => {
 
         <StatCard
           label="Flagged content"
-          value={dataUnavailable ? '—' : flagged}
+          value={statsUnavailable ? '—' : flagged}
           note="Items with reported findings"
           accent="text-rose-600"
           icon={ShieldCheck}
@@ -448,7 +466,7 @@ const visible = useMemo(() => {
                     <span className={`h-2 w-2 shrink-0 rounded-full ${color}`} />
                     {label}
                   </span>
-                  <span className={`text-sm font-semibold ${text}`}>{dataUnavailable ? '—' : value}</span>
+                  <span className={`text-sm font-semibold ${text}`}>{statsUnavailable ? '—' : value}</span>
                 </div>
               ))}
             </div>
