@@ -51,7 +51,7 @@ router.post('/upload-and-scan', upload.single('media'), async (req, res) => {
 
     // --- B. Scan with Gemini ---
     const base64Data = buffer.toString('base64');
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
     
     const prompt = "Analyze this image for brand compliance. Point out any logos, text, or elements that look out of place, inappropriate, or low resolution.";
     
