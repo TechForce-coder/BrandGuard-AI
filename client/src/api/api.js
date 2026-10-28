@@ -1,4 +1,4 @@
-const API_URL = '/api';
+const API_URL = 'https://brandguard-ai-3br0.onrender.com/api';
 
 function clearSession() {
   localStorage.removeItem('brandguard-token');
