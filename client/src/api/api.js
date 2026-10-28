@@ -248,5 +248,27 @@ export const api = {
 
   async getAudit() {
     return request('/audit');
+  },
+
+  // NEW METHOD: Drive + Gemini Upload 
+  async uploadAndScanFile(file) {
+    const token = localStorage.getItem('brandguard-token');
+    const formData = new FormData();
+    formData.append('media', file);
+
+    const response = await fetch(`${API_URL}/upload-and-scan`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: formData // Fetch sets the multipart boundary automatically
+    });
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => null);
+      throw new Error(errBody?.error || `Upload failed (${response.status})`);
+    }
+
+    return response.json();
   }
 };
