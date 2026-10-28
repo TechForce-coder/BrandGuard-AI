@@ -6,19 +6,25 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const router = express.Router();
 
-// Store file in RAM
+// 1. Store file in RAM
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Auth for Google Drive
-const auth = new google.auth.JWT(
-  process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-  null,
-  process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-  ['https://www.googleapis.com/auth/drive.file']
-);
+// 2. Auth for Google Drive (UPDATED: Bulletproof Render Formatting)
+// This strips accidental starting/ending quotes and fixes Render's newline injection
+const formattedPrivateKey = process.env.GOOGLE_PRIVATE_KEY
+  ? process.env.GOOGLE_PRIVATE_KEY.replace(/^"|"$/g, '').replace(/\\n/g, '\n')
+  : '';
+
+const auth = new google.auth.GoogleAuth({
+  credentials: {
+    client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    private_key: formattedPrivateKey,
+  },
+  scopes: ['https://www.googleapis.com/auth/drive.file'],
+});
 const drive = google.drive({ version: 'v3', auth });
 
-// Auth for Gemini
+// 3. Auth for Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 router.post('/upload-and-scan', upload.single('media'), async (req, res) => {
@@ -27,7 +33,7 @@ router.post('/upload-and-scan', upload.single('media'), async (req, res) => {
 
     const { originalname, mimetype, buffer } = req.file;
 
-    // 1. Upload to Google Drive
+    // --- A. Upload to Google Drive ---
     const bufferStream = new require('stream').PassThrough();
     bufferStream.end(buffer);
 
@@ -45,7 +51,7 @@ router.post('/upload-and-scan', upload.single('media'), async (req, res) => {
 
     const driveLink = driveResponse.data.webViewLink;
 
-    // 2. Scan with Gemini
+    // --- B. Scan with Gemini ---
     const base64Data = buffer.toString('base64');
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
@@ -61,7 +67,7 @@ router.post('/upload-and-scan', upload.single('media'), async (req, res) => {
     const geminiResult = await model.generateContent([prompt, imagePart]);
     const analysis = geminiResult.response.text();
 
-    // 3. Return results
+    // --- C. Return results ---
     res.status(200).json({
       success: true,
       driveUrl: driveLink,
