@@ -9,20 +9,18 @@ const router = express.Router();
 // 1. Store file in RAM
 const upload = multer({ storage: multer.memoryStorage() });
 
-// 2. Auth for Google Drive (UPDATED: Bulletproof Render Formatting)
-// This strips accidental starting/ending quotes and fixes Render's newline injection
-const formattedPrivateKey = process.env.GOOGLE_PRIVATE_KEY
-  ? process.env.GOOGLE_PRIVATE_KEY.replace(/^"|"$/g, '').replace(/\\n/g, '\n')
-  : '';
+// 2. Auth for Google Drive (OAuth2 Method)
+const oauth2Client = new google.auth.OAuth2(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  'https://developers.google.com/oauthplayground'
+);
 
-const auth = new google.auth.GoogleAuth({
-  credentials: {
-    client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    private_key: formattedPrivateKey,
-  },
-  scopes: ['https://www.googleapis.com/auth/drive.file'],
+oauth2Client.setCredentials({
+  refresh_token: process.env.GOOGLE_REFRESH_TOKEN
 });
-const drive = google.drive({ version: 'v3', auth });
+
+const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
 // 3. Auth for Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
