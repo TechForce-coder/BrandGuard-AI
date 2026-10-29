@@ -1,4 +1,7 @@
-const API_URL = 'https://brandguard-ai-3br0.onrender.com/api';
+const hostname = typeof window === 'undefined' ? 'localhost' : window.location.hostname;
+const API_URL = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname)
+  ? '/api'
+  : 'https://brandguard-ai-3br0.onrender.com/api';
 
 function clearSession() {
   localStorage.removeItem('brandguard-token');
@@ -185,6 +188,7 @@ export const api = {
       content: draft.content ?? draft.text ?? '',
       channel: draft.channel || 'Website',
       hasImage: draft.hasImage === true,
+      imageUrl: draft.imageUrl || '',
       altText: draft.altText || ''
     };
     const result = draft.id
@@ -285,10 +289,19 @@ export const api = {
   },
 
   // NEW METHOD: Drive + Gemini Upload 
-  async uploadAndScanFile(file) {
+  async uploadAndScanFile(file, draftId, imageUrl = '') {
+    if (typeof draftId !== 'string' || !draftId.trim()) {
+      throw new Error('Save the draft before scanning its image.');
+    }
+    if (!file && !imageUrl) {
+      throw new Error('Upload an image or enter an image URL before scanning.');
+    }
+
     const token = localStorage.getItem('brandguard-token');
     const formData = new FormData();
-    formData.append('media', file);
+    if (file) formData.append('media', file);
+    formData.append('draftId', draftId);
+    if (imageUrl) formData.append('imageUrl', imageUrl);
 
     const response = await fetch(`${API_URL}/upload-and-scan`, {
       method: 'POST',
@@ -300,9 +313,13 @@ export const api = {
 
     if (!response.ok) {
       const errBody = await response.json().catch(() => null);
-      throw new Error(errBody?.error || `Upload failed (${response.status})`);
+      throw new Error(errBody?.message || errBody?.error || `Upload failed (${response.status})`);
     }
 
-    return response.json();
+    const result = await response.json();
+    if (result?.success !== true || !Array.isArray(result.scans)) {
+      throw new Error(result?.message || 'The image scan response was not in the expected format.');
+    }
+    return result;
   }
 };

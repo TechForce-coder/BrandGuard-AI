@@ -12,6 +12,10 @@ export function getDraftEditorState(draft, fallback = {}) {
     channel: record.channel ?? fallback.channel ?? '',
     content: record.content ?? fallback.content ?? '',
     hasImage: record.hasImage ?? fallback.hasImage ?? false,
+    imageUrl: record.imageUrl ?? fallback.imageUrl ?? '',
+    imageScanStatus: record.imageScanStatus ?? fallback.imageScanStatus ?? 'not-scanned',
+    imageScanResult: record.imageScanResult ?? fallback.imageScanResult ?? '',
+    imageScanDriveUrl: record.imageScanDriveUrl ?? fallback.imageScanDriveUrl ?? '',
     altText: record.altText ?? fallback.altText ?? '',
     findings: Array.isArray(record.findings)
       ? record.findings

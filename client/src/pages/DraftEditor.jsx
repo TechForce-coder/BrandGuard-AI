@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   CheckCircle2,
   LoaderCircle,
-  ScanSearch,
+  ImagePlus,
   Send,
+  X,
 } from 'lucide-react';
 
 import { api } from '../api/api.js';
@@ -14,6 +15,22 @@ import FindingsPanel from '../components/FindingsPanel.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { getDraftEditorState, submitReviewComment } from '../utils/draftEditorWorkflow.js';
 import { canMutateInWorkspace } from '../utils/workspacePreview.js';
+
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif']);
+const IMAGE_EXTENSIONS = /\.(jpe?g|png|webp|avif)$/i;
+
+function getImageUrlError(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || !url.hostname || url.username || url.password) {
+      return 'Enter a valid HTTPS image URL.';
+    }
+    return '';
+  } catch {
+    return 'Enter a valid HTTPS image URL.';
+  }
+}
 
 export default function DraftEditor({ actualRole, workspaceRole = actualRole, previewMode = false }) {
   const { id } = useParams();
@@ -26,6 +43,16 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
   const [text, setText] = useState('');
   const [hasImage, setHasImage] = useState(false);
   const [altText, setAltText] = useState('');
+  const [imageFile, setImageFile] = useState(null);
+  const [imageUrl, setImageUrl] = useState('');
+  const [imageFilePreview, setImageFilePreview] = useState('');
+  const [imagePreviewError, setImagePreviewError] = useState(false);
+  const [imageInputError, setImageInputError] = useState('');
+  const [imageScanning, setImageScanning] = useState(false);
+  const [imageScanStatus, setImageScanStatus] = useState('not-scanned');
+  const [imageScanResult, setImageScanResult] = useState('');
+  const [imageScanDriveUrl, setImageScanDriveUrl] = useState('');
+  const [imageScanError, setImageScanError] = useState('');
   const [findings, setFindings] = useState([]);
   const [reviewHistory, setReviewHistory] = useState([]);
   const [status, setStatus] = useState('Draft');
@@ -39,6 +66,10 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
   const [suggestedContent, setSuggestedContent] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const fileInputRef = useRef(null);
+  const submissionInProgress = useRef(false);
+  const trimmedImageUrl = imageUrl.trim();
+  const imageUrlError = trimmedImageUrl ? getImageUrlError(trimmedImageUrl) : '';
 
   const authenticatedRole = String(actualRole || '').toLowerCase();
   const canReview = String(actualRole || '').trim().toLowerCase() === 'manager';
@@ -58,6 +89,17 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
     loadDraft();
   }, [id]);
 
+  useEffect(() => {
+    if (!imageFile) {
+      setImageFilePreview('');
+      return undefined;
+    }
+
+    const previewUrl = URL.createObjectURL(imageFile);
+    setImageFilePreview(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [imageFile]);
+
   async function loadDraft() {
     try {
       setLoading(true);
@@ -73,7 +115,11 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setChannel(editorState.channel);
       setText(editorState.content);
       setHasImage(editorState.hasImage);
+      setImageUrl(editorState.imageUrl);
       setAltText(editorState.altText);
+      setImageScanStatus(editorState.imageScanStatus);
+      setImageScanResult(editorState.imageScanResult);
+      setImageScanDriveUrl(editorState.imageScanDriveUrl);
       setFindings(editorState.findings);
       setReviewHistory(editorState.reviewHistory);
       setStatus(editorState.status);
@@ -86,6 +132,46 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
     } finally {
       setLoading(false);
     }
+  }
+
+  function clearImageSelection() {
+    setImageFile(null);
+    setImageUrl('');
+    setImagePreviewError(false);
+    setImageInputError('');
+    setImageScanResult('');
+    setImageScanDriveUrl('');
+    setImageScanError('');
+    setImageScanStatus('not-scanned');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  function handleImageFileChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setImageFile(null);
+    setImageUrl('');
+    setImagePreviewError(false);
+    setImageScanResult('');
+    setImageScanDriveUrl('');
+    setImageScanError('');
+    setImageScanStatus('not-scanned');
+
+    if (file.size > MAX_IMAGE_SIZE) {
+      setImageInputError('Choose an image no larger than 10 MB.');
+      event.target.value = '';
+      return;
+    }
+
+    if (!IMAGE_TYPES.has(file.type) && !(file.type === '' && IMAGE_EXTENSIONS.test(file.name))) {
+      setImageInputError('Choose a JPEG, PNG, WebP or AVIF image.');
+      event.target.value = '';
+      return;
+    }
+
+    setImageInputError('');
+    setImageFile(file);
   }
 
   async function handleSave(options = {}) {
@@ -113,6 +199,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         channel,
         content: contentToSave,
         hasImage,
+        imageUrl,
         altText,
       });
 
@@ -122,7 +209,11 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         channel,
         content: contentToSave,
         hasImage,
+        imageUrl,
         altText,
+        imageScanStatus,
+        imageScanResult,
+        imageScanDriveUrl,
         findings,
         status,
         scanned,
@@ -149,7 +240,11 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setChannel(editorState.channel);
       setText(editorState.content);
       setHasImage(editorState.hasImage);
+      setImageUrl(editorState.imageUrl);
       setAltText(editorState.altText);
+      setImageScanStatus(editorState.imageScanStatus);
+      setImageScanResult(editorState.imageScanResult);
+      setImageScanDriveUrl(editorState.imageScanDriveUrl);
       setStatus(editorState.status);
       setFindings(editorState.findings);
       setReviewHistory(editorState.reviewHistory);
@@ -246,63 +341,6 @@ async function handleApplyFullSuggestion() {
   }
 }
 
-  async function handleScan() {
-    if (!canMutateInWorkspace(previewMode)) {
-      setError('Scanning is disabled in development workspace preview.');
-      return;
-    }
-
-    try {
-      setScanning(true);
-      setError('');
-      setMessage('');
-      setSuggestedContent('');
-
-      const saved = await handleSave({ navigateAfter: false });
-
-      if (!saved) return;
-
-      const response = await api.scanDraft(saved.id, text);
-      const data = response?.draft ?? response?.data ?? response;
-      const nextFindings = Array.isArray(data.findings) ? data.findings : [];
-      const nextScanStatus = data.scanStatus || 'complete';
-
-      if (Array.isArray(data.findings)) {
-        setFindings(nextFindings);
-      }
-
-      if (data.status) {
-        setStatus(data.status);
-      }
-
-      setSuggestedContent(
-        nextScanStatus === 'complete' &&
-        typeof data.suggestedContent === 'string' &&
-        data.suggestedContent.trim()
-          ? data.suggestedContent
-          : ''
-      );
-
-      setScanStatus(nextScanStatus);
-      setScanWarning(data.warning || data.scanWarning || '');
-      setScanned(nextScanStatus === 'complete');
-
-      setMessage(
-        nextScanStatus === 'partial'
-          ? 'Scan incomplete. Resolve the provider issue and run a complete scan before submitting.'
-          : 'Draft scan completed.'
-      );
-
-      if (!id) {
-        navigate(`/drafts/${saved.id}`, { replace: true });
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to scan draft.');
-    } finally {
-      setScanning(false);
-    }
-  }
-
   async function handleDecision(finding, decision, reason = '') {
     if (!canMutateInWorkspace(previewMode)) {
       setError('Finding decisions are disabled in development workspace preview.');
@@ -342,22 +380,107 @@ async function handleApplyFullSuggestion() {
       return;
     }
 
-    if (!scanned) {
-      setError('Run a scan on the latest saved draft before submitting.');
+    if (submissionInProgress.current) return;
+    if (hasImage && imageUrlError) {
+      setError(imageUrlError);
       return;
     }
 
-    if (findings.some(finding => !finding.status || finding.status === 'Open')) {
-      setError('Resolve each finding before submitting for approval.');
-      return;
-    }
-
+    submissionInProgress.current = true;
+    let imageScanAttempted = false;
+    let imageScanCompleted = false;
     try {
       setSubmitting(true);
       setError('');
       setMessage('');
+      setImageScanError('');
+      setSuggestedContent('');
 
-      const response = await api.submitDraft(draftId);
+      const saved = await handleSave({ navigateAfter: false });
+      if (!saved) return;
+
+      let nextFindings = findings;
+      let contentScanError = '';
+      if (!scanned) {
+        setScanning(true);
+        try {
+          const scanResponse = await api.scanDraft(saved.id, text);
+          const scanData = scanResponse?.draft ?? scanResponse?.data ?? scanResponse;
+          const scanStatus = scanData.scanStatus || 'complete';
+          nextFindings = Array.isArray(scanData.findings) ? scanData.findings : [];
+          setFindings(nextFindings);
+          setScanStatus(scanStatus);
+          setScanWarning(scanData.warning || scanData.scanWarning || '');
+          setScanned(scanStatus === 'complete');
+          setSuggestedContent(
+            scanStatus === 'complete' &&
+            typeof scanData.suggestedContent === 'string' &&
+            scanData.suggestedContent.trim()
+              ? scanData.suggestedContent
+              : ''
+          );
+          if (scanStatus !== 'complete') {
+            contentScanError = scanData.warning || 'The content scan was incomplete. Resolve the scan issue and submit again.';
+          }
+        } catch (scanError) {
+          contentScanError = scanError.message || 'Failed to scan draft content.';
+        } finally {
+          setScanning(false);
+        }
+      }
+
+      if (hasImage) {
+        if (
+          (imageFile || trimmedImageUrl) &&
+          (imageScanStatus !== 'complete' || saved.imageScanStatus !== 'complete')
+        ) {
+          imageScanAttempted = true;
+          setImageScanning(true);
+          setImageScanResult('');
+          setImageScanStatus('processing');
+          const imageResponse = await api.uploadAndScanFile(
+            imageFile,
+            saved.id,
+            imageFile ? '' : trimmedImageUrl
+          );
+          const imageData = imageResponse?.draft ?? imageResponse?.data ?? imageResponse;
+          const analysis = typeof imageData.imageScanResult === 'string'
+            ? imageData.imageScanResult
+            : imageResponse.scans
+              .map(scan => scan?.geminiAnalysis)
+              .filter(value => typeof value === 'string' && value.trim())
+              .join('\n\n');
+
+          if (imageData.imageScanStatus !== 'complete' || !analysis.trim()) {
+            throw new Error('The image scan did not return a complete result. Retry submission to scan the image again.');
+          }
+
+          imageScanCompleted = true;
+          setImageScanStatus('complete');
+          setImageScanResult(analysis);
+          setImageScanDriveUrl(imageData.imageScanDriveUrl || imageResponse.scans[0]?.driveUrl || '');
+          setDraft(previous => ({ ...previous, ...imageData }));
+        } else if (
+          saved.imageScanStatus !== 'complete' ||
+          typeof saved.imageScanResult !== 'string' ||
+          !saved.imageScanResult.trim()
+        ) {
+          throw new Error('Upload an image or enter its HTTPS URL before submitting this image draft.');
+        } else {
+          setImageScanStatus(saved.imageScanStatus);
+          setImageScanResult(saved.imageScanResult);
+        }
+      }
+
+      if (contentScanError) {
+        throw new Error(contentScanError);
+      }
+
+      if (nextFindings.some(finding => !finding.status || finding.status === 'Open')) {
+        throw new Error('Resolve each finding before submitting for approval. Your completed scans have been saved.');
+      }
+
+      const response = await api.submitDraft(saved.id);
       const data = response?.draft ?? response?.data ?? response;
 
       if (data.status) {
@@ -367,10 +490,21 @@ async function handleApplyFullSuggestion() {
       }
 
       setMessage('Draft submitted for approval.');
+      if (!id) {
+        navigate(`/drafts/${saved.id}`, { replace: true });
+      }
     } catch (err) {
+      setMessage('');
+      if (imageScanAttempted && !imageScanCompleted) {
+        setImageScanStatus('failed');
+        setImageScanError(err.message || 'Failed to scan image.');
+      }
       setError(err.message || 'Failed to submit draft.');
     } finally {
+      setScanning(false);
+      setImageScanning(false);
       setSubmitting(false);
+      submissionInProgress.current = false;
     }
   }
 
@@ -587,48 +721,195 @@ async function handleApplyFullSuggestion() {
           </div>
         </div>
 
-        <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
-          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-            <input
-              type="checkbox"
-              checked={hasImage}
-              onChange={event => {
-                setHasImage(event.target.checked);
-                setScanned(false);
-                setScanStatus('not-scanned');
-                setScanWarning('');
-                setSuggestedContent('');
-              }}
-              disabled={readOnly}
-            />
-            This content includes an image
-          </label>
-
-          {hasImage && (
-            <label htmlFor="draft-alt-text" className="block text-sm font-medium text-slate-700">
-              Image alt-text
+        <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Image Scanning (Optional)</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Add an image to preview it and scan it automatically when you submit.
+              </p>
+            </div>
+            <label className="inline-flex shrink-0 items-center gap-2 text-sm font-medium text-slate-700">
               <input
-                id="draft-alt-text"
-                type="text"
-                maxLength={300}
-                value={altText}
+                type="checkbox"
+                checked={hasImage}
                 onChange={event => {
-                  setAltText(event.target.value);
+                  setHasImage(event.target.checked);
+                  setImageScanStatus('not-scanned');
+                  setImageScanResult('');
+                  setImageScanDriveUrl('');
+                  setImageScanError('');
                   setScanned(false);
                   setScanStatus('not-scanned');
                   setScanWarning('');
                   setSuggestedContent('');
                 }}
                 disabled={readOnly}
-                className="input mt-1.5 w-full"
-                placeholder="Describe the meaningful visual content"
+                className="accent-blue-700"
               />
-              <span className="mt-1 block text-xs font-normal text-slate-500">
-                The scan checks that alt-text is descriptive and 5–125 characters long.
-              </span>
+              This content includes an image
             </label>
+          </div>
+
+          {hasImage && (
+            <div className="space-y-4">
+              <div className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:p-5 md:grid-cols-[12rem_minmax(0,1fr)]">
+                <div
+                  className="flex min-h-44 items-center justify-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-center"
+                  aria-label="Image preview"
+                >
+                  {imageFilePreview || (trimmedImageUrl && !imageUrlError) ? (
+                    imagePreviewError ? (
+                      <p className="text-sm text-slate-600">Image preview could not be loaded.</p>
+                    ) : (
+                      <img
+                        src={imageFilePreview || trimmedImageUrl}
+                        alt="Selected image preview"
+                        onError={() => setImagePreviewError(true)}
+                        onLoad={() => setImagePreviewError(false)}
+                        className="max-h-52 w-full rounded-md object-contain"
+                      />
+                    )
+                  ) : (
+                    imageScanDriveUrl ? (
+                      <div className="text-slate-700">
+                        <ImagePlus className="mx-auto mb-2 text-blue-700" size={28} aria-hidden="true" />
+                        <p className="text-sm font-medium">Image saved</p>
+                        <a
+                          href={imageScanDriveUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-1 block text-xs text-blue-700 underline"
+                        >
+                          View uploaded image
+                        </a>
+                      </div>
+                    ) : (
+                      <div className="text-slate-700">
+                        <ImagePlus className="mx-auto mb-2 text-blue-700" size={28} aria-hidden="true" />
+                        <p className="text-sm font-medium">Image preview</p>
+                        <p className="mt-1 text-xs text-slate-500">Choose an image or add a URL</p>
+                      </div>
+                    )
+                  )}
+                </div>
+
+                <div className="min-w-0 space-y-3">
+                  <div className="space-y-1.5">
+                    <label htmlFor="draft-image-url" className="block text-sm font-medium text-slate-700">
+                      Image URL
+                    </label>
+                    <input
+                      id="draft-image-url"
+                      type="url"
+                      value={imageUrl}
+                      onChange={event => {
+                        setImageFile(null);
+                        setImageUrl(event.target.value);
+                        setImagePreviewError(false);
+                        setImageInputError('');
+                        setImageScanResult('');
+                        setImageScanDriveUrl('');
+                        setImageScanError('');
+                        setImageScanStatus('not-scanned');
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                      }}
+                      disabled={readOnly || imageScanning}
+                      aria-invalid={Boolean(imageUrlError)}
+                      aria-describedby="draft-image-help"
+                      className="input w-full"
+                      placeholder="https://example.com/image.jpg"
+                    />
+                    {imageUrlError && (
+                      <p role="alert" className="text-sm text-rose-700">{imageUrlError}</p>
+                    )}
+                    {imageInputError && (
+                      <p role="alert" className="text-sm text-rose-700">{imageInputError}</p>
+                    )}
+                  </div>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp,.avif,image/jpeg,image/png,image/webp,image/avif"
+                    onChange={handleImageFileChange}
+                    disabled={readOnly || imageScanning}
+                    className="sr-only"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={readOnly || imageScanning}
+                      className="btn-secondary inline-flex items-center gap-2"
+                    >
+                      <ImagePlus className="text-blue-700" size={16} aria-hidden="true" />
+                      {imageFile || trimmedImageUrl ? 'Replace image' : 'Upload image'}
+                    </button>
+                    {(imageFile || trimmedImageUrl) && (
+                      <button
+                        type="button"
+                        onClick={clearImageSelection}
+                        disabled={readOnly || imageScanning}
+                        className="btn-secondary inline-flex items-center gap-2"
+                      >
+                        <X size={16} aria-hidden="true" />
+                        Remove image
+                      </button>
+                    )}
+                  </div>
+                  <p id="draft-image-help" className="text-xs leading-5 text-slate-500">
+                    Upload JPEG, PNG, WebP or AVIF images up to 10 MB, or paste an HTTPS image URL.
+                  </p>
+                </div>
+              </div>
+
+              {imageScanError && (
+                <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                  {imageScanError}
+                </p>
+              )}
+              {imageScanning && (
+                <p role="status" className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                  Uploading and scanning image…
+                </p>
+              )}
+              {imageScanResult && (
+                <div role="status" className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                  <h3 className="text-sm font-semibold text-slate-900">Image scan result</h3>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                    {imageScanResult}
+                  </p>
+                </div>
+              )}
+
+              <label htmlFor="draft-alt-text" className="block text-sm font-medium text-slate-700">
+                Image alt-text
+                <input
+                  id="draft-alt-text"
+                  type="text"
+                  maxLength={300}
+                  value={altText}
+                  onChange={event => {
+                    setAltText(event.target.value);
+                    setScanned(false);
+                    setScanStatus('not-scanned');
+                    setScanWarning('');
+                    setSuggestedContent('');
+                  }}
+                  disabled={readOnly}
+                  className="input mt-1.5 w-full"
+                  placeholder="Describe the meaningful visual content"
+                />
+                <span className="mt-1 block text-xs font-normal text-slate-500">
+                  The scan checks that alt-text is descriptive and 5–125 characters long.
+                </span>
+              </label>
+            </div>
           )}
-        </div>
+        </section>
 
         {!readOnly && (
           <div className="flex flex-wrap gap-3">
@@ -644,20 +925,6 @@ async function handleApplyFullSuggestion() {
 
             <button
               type="button"
-              onClick={handleScan}
-              disabled={saving || scanning || submitting}
-              className="btn-primary inline-flex items-center gap-2"
-            >
-              {scanning ? (
-                <LoaderCircle className="animate-spin" size={16} />
-              ) : (
-                <ScanSearch size={16} />
-              )}
-              Scan draft
-            </button>
-
-            <button
-              type="button"
               onClick={handleSubmit}
               disabled={saving || scanning || submitting}
               className="btn-primary inline-flex items-center gap-2"
@@ -667,7 +934,7 @@ async function handleApplyFullSuggestion() {
               ) : (
                 <Send size={16} />
               )}
-              Submit for approval
+              {submitting ? 'Saving and scanning…' : 'Submit for approval'}
             </button>
           </div>
         )}
