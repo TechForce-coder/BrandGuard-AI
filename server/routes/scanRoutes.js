@@ -7,6 +7,20 @@ const Scan = require('../models/Scan');
 
 const router = express.Router();
 
+// Fallback hierarchy of active multimodal models
+const DEFAULT_IMAGE_MODELS = [
+  process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
+  process.env.GEMINI_FALLBACK_MODEL || "gemini-3.8-flash",
+  "gemini-3.6-flash",
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-pro"
+];
+
+// Helper to pause between transient retries
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // 1. Store files in RAM (allow up to 5 files)
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -24,17 +38,60 @@ oauth2Client.setCredentials({
 const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
 // 3. Auth for Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+
+/**
+ * Executes multimodal image scanning across candidate fallback models
+ */
+async function analyzeImageWithFallback(prompt, imagePart) {
+  const candidateModels = [...new Set(DEFAULT_IMAGE_MODELS.filter(Boolean))];
+  let lastError = null;
+
+  for (const modelName of candidateModels) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        console.log(`[BrandGuard Media] Trying Gemini model: ${modelName} (attempt ${attempt + 1})`);
+        
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const geminiResult = await model.generateContent([prompt, imagePart]);
+        const response = await geminiResult.response;
+        const analysis = response.text();
+
+        if (analysis && analysis.trim()) {
+          console.log(`[BrandGuard Media] Image scan succeeded with: ${modelName}`);
+          return { analysis, modelUsed: modelName };
+        }
+      } catch (err) {
+        lastError = err;
+        const status = Number(err.status || err.code || err.error?.code);
+        console.warn(`[BrandGuard Media] Model ${modelName} failed: ${err.message} (status: ${status || 'N/A'})`);
+
+        // If rate limited or service is busy, pause briefly before retrying
+        const isTransient = status === 429 || status === 503 || status >= 500;
+        if (isTransient && attempt === 0) {
+          await sleep(1500);
+        } else {
+          // If 404 or other permanent failure, jump directly to the next fallback model
+          break;
+        }
+      }
+    }
+  }
+
+  throw new Error(`All image fallback models failed. Last error: ${lastError?.message}`);
+}
 
 router.post('/upload-and-scan', upload.array('media', 5), async (req, res) => {
   try {
-    // Check if files exist in req.files (array)
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: 'No files uploaded' });
     }
 
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ error: 'GEMINI_API_KEY is not configured on the server.' });
+    }
+
     const results = [];
-    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
     const prompt = "Analyze this image for brand compliance. Point out any logos, text, or elements that look out of place, inappropriate, or low resolution.";
 
     // Loop through each uploaded file
@@ -45,21 +102,26 @@ router.post('/upload-and-scan', upload.array('media', 5), async (req, res) => {
       const bufferStream = new PassThrough();
       bufferStream.end(buffer);
 
-      const driveResponse = await drive.files.create({
-        requestBody: {
-          name: originalname,
-          parents: [process.env.GOOGLE_DRIVE_FOLDER_ID],
-        },
-        media: {
-          mimeType: mimetype,
-          body: bufferStream,
-        },
-        fields: 'id, webViewLink',
-      });
+      let driveLink = '';
+      try {
+        const driveResponse = await drive.files.create({
+          requestBody: {
+            name: originalname,
+            parents: process.env.GOOGLE_DRIVE_FOLDER_ID ? [process.env.GOOGLE_DRIVE_FOLDER_ID] : [],
+          },
+          media: {
+            mimeType: mimetype,
+            body: bufferStream,
+          },
+          fields: 'id, webViewLink',
+        });
+        driveLink = driveResponse.data.webViewLink;
+      } catch (driveErr) {
+        console.warn(`Drive upload failed for ${originalname}:`, driveErr.message);
+        // Continue scanning even if Drive upload fails
+      }
 
-      const driveLink = driveResponse.data.webViewLink;
-
-      // --- B. Scan with Gemini ---
+      // --- B. Scan with Gemini with Fallback Cascade ---
       const base64Data = buffer.toString('base64');
       const imagePart = {
         inlineData: {
@@ -68,23 +130,24 @@ router.post('/upload-and-scan', upload.array('media', 5), async (req, res) => {
         },
       };
 
-      const geminiResult = await model.generateContent([prompt, imagePart]);
-      const analysis = geminiResult.response.text();
+      const { analysis, modelUsed } = await analyzeImageWithFallback(prompt, imagePart);
 
       // --- C. Save record to MongoDB ---
       const newScan = new Scan({
         fileName: originalname,
         driveUrl: driveLink,
-        geminiAnalysis: analysis
+        geminiAnalysis: analysis,
+        modelUsed
       });
       await newScan.save();
-      console.log(`Scan saved to MongoDB: ${originalname}`);
+      console.log(`Scan saved to MongoDB: ${originalname} (using ${modelUsed})`);
 
       // Collect processed result
       results.push({
         fileName: originalname,
         driveUrl: driveLink,
-        geminiAnalysis: analysis
+        geminiAnalysis: analysis,
+        modelUsed
       });
     }
 
@@ -95,8 +158,8 @@ router.post('/upload-and-scan', upload.array('media', 5), async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Pipeline Error:', error);
-    res.status(500).json({ error: 'Failed to process file(s)' });
+    console.error('Pipeline Error:', error.message);
+    res.status(500).json({ error: error.message || 'Failed to process file(s)' });
   }
 });
 
@@ -106,7 +169,7 @@ router.get('/history', async (req, res) => {
     const scans = await Scan.find().sort({ createdAt: -1 }); // Newest first
     res.status(200).json(scans);
   } catch (error) {
-    console.error('History Fetch Error:', error);
+    console.error('History Fetch Error:', error.message);
     res.status(500).json({ error: 'Failed to fetch scan history' });
   }
 });

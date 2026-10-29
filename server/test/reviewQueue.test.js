@@ -10,7 +10,7 @@ test("review queue exposes actions only for authorized pending drafts", async ()
         ["Approve", "Request Changes"]
     );
     assert.deepEqual(
-        getReviewQueueActions("Reviewer", pendingDraft).map(action => action.action),
+        getReviewQueueActions("Admin", pendingDraft).map(action => action.action),
         ["approve", "request-changes"]
     );
     assert.deepEqual(getReviewQueueActions("Creator", pendingDraft), []);

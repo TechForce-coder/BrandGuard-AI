@@ -29,15 +29,15 @@ router.post(
 router.get(
     "/",
     authenticate,
-    authorizeRoles("creator", "reviewer", "manager", "admin"),
+    authorizeRoles("creator", "manager", "admin"),
     getDrafts
 );
 
-// Dashboard statistics — must be before /:id
+// Dashboard statistics
 router.get(
     "/dashboard",
     authenticate,
-    authorizeRoles("creator", "reviewer", "manager", "admin"),
+    authorizeRoles("creator", "manager", "admin"),
     getDashboardStats
 );
 
@@ -53,7 +53,7 @@ router.get(
 router.get(
     "/:id",
     authenticate,
-    authorizeRoles("creator", "reviewer", "manager", "admin"),
+    authorizeRoles("creator", "manager", "admin"),
     getDraftById
 );
 
@@ -85,7 +85,7 @@ router.post(
 router.post(
     "/:id/comments",
     authenticate,
-    authorizeRoles("manager"),
+    authorizeRoles("manager", "admin"),
     addDraftComment
 );
 
@@ -93,7 +93,7 @@ router.post(
 router.post(
     "/:id/approve",
     authenticate,
-    authorizeRoles("manager"),
+    authorizeRoles("manager", "admin"),
     (req, res, next) => {
         req.body.action = "approve";
         reviewDraft(req, res, next);
@@ -104,7 +104,7 @@ router.post(
 router.post(
     "/:id/request-changes",
     authenticate,
-    authorizeRoles("manager"),
+    authorizeRoles("manager", "admin"),
     (req, res, next) => {
         req.body.action = "request-changes";
         reviewDraft(req, res, next);

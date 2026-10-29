@@ -183,7 +183,7 @@ test("development workspace selection is presentation-only and disables preview 
         previewMode: true
     });
     assert.equal(canMutateInWorkspace(managerPreview.previewMode), false);
-    for (const role of ["Creator", "Reviewer", "Manager", "Admin"]) {
+    for (const role of ["Creator", "Manager", "Admin"]) {
         const selection = resolveWorkspaceSelection("creator", role, true);
         assert.equal(selection.actualRole, "Creator");
         assert.equal(selection.workspaceRole, role);
@@ -205,11 +205,10 @@ test("development workspace selection is presentation-only and disables preview 
     const { WORKSPACE_CONFIG } = await import("../../client/src/utils/workspacePreview.js");
     const expectedNavigation = {
         Creator: [["/", "Dashboard"], ["/drafts", "My Drafts"], ["/drafts/new", "Submit Content"]],
-        Reviewer: [["/", "Dashboard"], ["/review", "Review Queue"], ["/drafts", "Submitted Content"], ["/audit", "Audit Log"]],
         Manager: [["/", "Dashboard"], ["/review", "Approval Workflow"], ["/rulebook", "Guideline Library"], ["/facts", "Facts"], ["/audit", "Privacy & Audit Log"]],
         Admin: [["/", "Dashboard"], ["/drafts", "Content"], ["/rulebook", "Guideline Library"], ["/facts", "Facts"], ["/audit", "Audit Log"], ["/settings", "Administration"]]
     };
-    for (const role of ["Creator", "Reviewer", "Manager", "Admin"]) {
+    for (const role of ["Creator", "Manager", "Admin"]) {
         const selectedWorkspace = resolveWorkspaceSelection("creator", role, true).workspaceRole;
         const config = WORKSPACE_CONFIG[selectedWorkspace];
         assert.ok(config.dashboardTitle);
@@ -219,9 +218,6 @@ test("development workspace selection is presentation-only and disables preview 
     assert.ok(WORKSPACE_CONFIG.Manager.navigation.some(item =>
         item.to === "/review" && item.label === "Approval Workflow"
     ));
-    assert.ok(WORKSPACE_CONFIG.Manager.navigation.some(item => item.to === "/rulebook"));
-    assert.ok(WORKSPACE_CONFIG.Manager.navigation.some(item => item.to === "/facts"));
-    assert.ok(WORKSPACE_CONFIG.Manager.navigation.some(item => item.to === "/audit"));
     assert.notEqual(WORKSPACE_CONFIG.Manager.dashboardTitle, WORKSPACE_CONFIG.Creator.dashboardTitle);
 
     const creatorToken = tokenForRole("creator", "preview-creator");
@@ -249,9 +245,6 @@ test("draft, audit, rulebook, and facts routes enforce authentication and role g
     const deniedRequests = [
         ["creator", "POST", "/api/drafts/x/approve"],
         ["creator", "POST", "/api/drafts/x/comments"],
-        ["reviewer", "GET", "/api/drafts/activity"],
-        ["manager", "GET", "/api/drafts/activity"],
-        ["admin", "GET", "/api/drafts/activity"],
         ["creator", "GET", "/api/audit"],
         ["creator", "POST", "/api/rulebook"],
         ["creator", "POST", "/api/facts"],
@@ -259,22 +252,13 @@ test("draft, audit, rulebook, and facts routes enforce authentication and role g
         ["creator", "DELETE", "/api/rulebook/x"],
         ["creator", "PUT", "/api/facts/x"],
         ["creator", "DELETE", "/api/facts/x"],
-        ["reviewer", "POST", "/api/drafts"],
-        ["reviewer", "PUT", "/api/drafts/x"],
-        ["reviewer", "POST", "/api/drafts/x/scan"],
-        ["reviewer", "POST", "/api/drafts/x/submit"],
-        ["reviewer", "PATCH", "/api/findings/0"],
-        ["reviewer", "POST", "/api/rulebook"],
-        ["reviewer", "POST", "/api/facts"],
-        ["reviewer", "PUT", "/api/rulebook/x"],
-        ["reviewer", "DELETE", "/api/rulebook/x"],
-        ["reviewer", "PUT", "/api/facts/x"],
-        ["reviewer", "DELETE", "/api/facts/x"],
+        ["manager", "GET", "/api/drafts/activity"],
         ["manager", "POST", "/api/drafts"],
         ["manager", "PUT", "/api/drafts/x"],
         ["manager", "POST", "/api/drafts/x/scan"],
         ["manager", "POST", "/api/drafts/x/submit"],
         ["manager", "PATCH", "/api/findings/0"],
+        ["admin", "GET", "/api/drafts/activity"],
         ["admin", "POST", "/api/drafts"],
         ["admin", "PUT", "/api/drafts/x"],
         ["admin", "POST", "/api/drafts/x/scan"],
@@ -360,7 +344,7 @@ test("authentication reports an account lookup outage instead of treating it as 
         }]
     ], async () => {
         const response = await fetch(`${baseUrl}/api/audit`, {
-            headers: { Authorization: `Bearer ${tokenForRole("reviewer", "lookup-failure-user")}` }
+            headers: { Authorization: `Bearer ${tokenForRole("manager", "lookup-failure-user")}` }
         });
         assert.equal(response.status, 503);
         assert.equal((await response.json()).message, "Authentication service temporarily unavailable");
@@ -446,7 +430,7 @@ test("authorized roles receive organization-scoped submitted drafts and audit hi
         [Draft, { find: query => { draftQuery = query; return draftQueryBuilder; } }],
         [AuditLog, { find: query => { auditQuery = query; return auditQueryBuilder; } }]
     ], async () => {
-        for (const role of ["creator", "reviewer", "manager", "admin"]) {
+        for (const role of ["creator", "manager", "admin"]) {
             const response = await fetch(`${baseUrl}/api/drafts`, {
                 headers: { Authorization: `Bearer ${tokenForRole(role)}` }
             });
@@ -460,7 +444,7 @@ test("authorized roles receive organization-scoped submitted drafts and audit hi
             }
         }
 
-        for (const role of ["reviewer", "manager", "admin"]) {
+        for (const role of ["manager", "admin"]) {
             const response = await fetch(`${baseUrl}/api/audit`, {
                 headers: { Authorization: `Bearer ${tokenForRole(role)}` }
             });
@@ -499,21 +483,16 @@ test("creator can view owned drafts at every status while other roles retain sub
         });
         assert.equal(creatorOtherDraft.status, 404);
 
-        const reviewerDraft = await fetch(`${baseUrl}/api/drafts/64f000000000000000000001`, {
-            headers: { Authorization: `Bearer ${tokenForRole("reviewer")}` }
-        });
-        assert.equal(reviewerDraft.status, 404);
-
         const managerDraft = await fetch(`${baseUrl}/api/drafts/64f000000000000000000001`, {
             headers: { Authorization: `Bearer ${tokenForRole("manager")}` }
         });
         assert.equal(managerDraft.status, 404);
 
         record = { author: "creator-id", status: "Pending Approval" };
-        const reviewerSubmitted = await fetch(`${baseUrl}/api/drafts/64f000000000000000000001`, {
-            headers: { Authorization: `Bearer ${tokenForRole("reviewer")}` }
+        const managerSubmitted = await fetch(`${baseUrl}/api/drafts/64f000000000000000000001`, {
+            headers: { Authorization: `Bearer ${tokenForRole("manager")}` }
         });
-        assert.equal(reviewerSubmitted.status, 200);
+        assert.equal(managerSubmitted.status, 200);
     });
 });
 
@@ -521,7 +500,7 @@ test("invalid comment and finding requests fail before database access", async (
     const comment = await fetch(`${baseUrl}/api/drafts/64f000000000000000000001/comments`, {
         method: "POST",
         headers: {
-            Authorization: `Bearer ${tokenForRole("reviewer")}`,
+            Authorization: `Bearer ${tokenForRole("manager")}`,
             "Content-Type": "application/json"
         },
         body: JSON.stringify({ comment: "  " })
@@ -541,7 +520,7 @@ test("invalid comment and finding requests fail before database access", async (
     const malformedBody = await fetch(`${baseUrl}/api/drafts/64f000000000000000000001/comments`, {
         method: "POST",
         headers: {
-            Authorization: `Bearer ${tokenForRole("reviewer")}`,
+            Authorization: `Bearer ${tokenForRole("manager")}`,
             "Content-Type": "application/json"
         },
         body: "null"
@@ -665,6 +644,8 @@ test("draft lifecycle enforces roles and records workflow history", async () => 
                 draft = {
                     ...payload,
                     _id: "64f000000000000000000003",
+                    originalContent: payload.content || "",
+                    revisions: [{ content: payload.content || "", savedAt: new Date() }],
                     findings: [],
                     findingsCount: 0,
                     scannedAt: null,
@@ -742,12 +723,12 @@ test("draft lifecycle enforces roles and records workflow history", async () => 
             scanContent: async (content, title, context) => {
                 scanContext = context;
                 return ({
-                findings: [{
-                    type: "Unsupported claim",
-                    quote: "Guaranteed result",
-                    explanation: "The claim requires evidence.",
-                    status: "Open"
-                }]
+                    findings: [{
+                        type: "Unsupported claim",
+                        quote: "Guaranteed result",
+                        explanation: "The claim requires evidence.",
+                        status: "Open"
+                    }]
                 });
             }
         }]
@@ -871,10 +852,10 @@ test("draft lifecycle enforces roles and records workflow history", async () => 
         const creatorCannotReadSubmitted = await send("creator", `/api/drafts/${draft._id}`, "GET", undefined, "creator-id");
         assert.equal(creatorCannotReadSubmitted.status, 200);
 
-        const reviewerCanComment = await send("manager", `/api/drafts/${draft._id}/comments`, "POST", {
+        const managerCanComment = await send("manager", `/api/drafts/${draft._id}/comments`, "POST", {
             comment: "Please clarify the evidence."
         }, "manager-id");
-        assert.equal(reviewerCanComment.status, 201);
+        assert.equal(managerCanComment.status, 201);
 
         const changesWithoutComment = await send(
             "manager",
@@ -886,10 +867,10 @@ test("draft lifecycle enforces roles and records workflow history", async () => 
         assert.equal(changesWithoutComment.status, 400);
         assert.equal(draft.status, "Pending Approval");
 
-        const reviewerRequestsChanges = await send("manager", `/api/drafts/${draft._id}/request-changes`, "POST", {
+        const managerRequestsChanges = await send("manager", `/api/drafts/${draft._id}/request-changes`, "POST", {
             comment: "Please clarify the evidence."
         }, "manager-id");
-        assert.equal(reviewerRequestsChanges.status, 200);
+        assert.equal(managerRequestsChanges.status, 200);
         assert.equal(draft.status, "Needs Changes");
         assert.equal(draft.reviewedBy, "manager-id");
         assert.ok(draft.reviewedAt instanceof Date);
@@ -931,12 +912,12 @@ test("draft lifecycle enforces roles and records workflow history", async () => 
         assert.equal(draft.reviewedAt, null);
         assert.equal(draft.reviewComment, "");
 
-        const reviewerCannotEdit = await send("reviewer", `/api/drafts/${draft._id}`, "PUT", {
-            title: "Changed by reviewer",
+        const creatorCannotEditSubmitted = await send("manager", `/api/drafts/${draft._id}`, "PUT", {
+            title: "Changed while submitted",
             content: "Not allowed",
             channel: "Website"
-        }, "reviewer-id");
-        assert.equal(reviewerCannotEdit.status, 403);
+        }, "manager-id");
+        assert.equal(creatorCannotEditSubmitted.status, 403);
 
         const approved = await send("manager", `/api/drafts/${draft._id}/approve`, "POST", {
             comment: "Approved."
@@ -998,7 +979,7 @@ test("failed review audit persistence rolls the draft status back", async () => 
         author: "creator-id",
         organisationId: "test-organisation",
         status: "Pending Approval",
-        reviewedBy: "prior-reviewer",
+        reviewedBy: "prior-manager",
         reviewedAt: previousReviewedAt,
         reviewComment: "Previous decision"
     };
@@ -1038,7 +1019,7 @@ test("failed review audit persistence rolls the draft status back", async () => 
         assert.equal(body.success, false);
         assert.match(body.message, /audit history could not be recorded/);
         assert.equal(draft.status, "Pending Approval");
-        assert.equal(draft.reviewedBy, "prior-reviewer");
+        assert.equal(draft.reviewedBy, "prior-manager");
         assert.equal(draft.reviewedAt, previousReviewedAt);
         assert.equal(draft.reviewComment, "Previous decision");
     });
@@ -1073,7 +1054,7 @@ test("failed audit rollback does not overwrite a newer concurrent review", async
         }],
         [AuditLog, {
             create: async () => {
-                draft.reviewedBy = "newer-reviewer";
+                draft.reviewedBy = "newer-manager";
                 draft.reviewedAt = new Date("2026-10-25T00:00:00.000Z");
                 draft.reviewComment = "Newer review";
                 throw new Error("audit store unavailable");
@@ -1094,7 +1075,7 @@ test("failed audit rollback does not overwrite a newer concurrent review", async
         assert.equal(body.success, false);
         assert.match(body.message, /Reload the draft to verify its status/);
         assert.equal(draft.status, "Approved");
-        assert.equal(draft.reviewedBy, "newer-reviewer");
+        assert.equal(draft.reviewedBy, "newer-manager");
         assert.equal(draft.reviewComment, "Newer review");
     });
 
@@ -1250,7 +1231,7 @@ test("draft actions require a valid token and the correct role", async () => {
     const wrongRole = await fetch(`${baseUrl}/api/drafts`, {
         method: "POST",
         headers: {
-            Authorization: `Bearer ${tokenForRole("reviewer")}`,
+            Authorization: `Bearer ${tokenForRole("manager")}`,
             "Content-Type": "application/json"
         },
         body: JSON.stringify({ title: "Test" })
@@ -1341,14 +1322,14 @@ test("Gemini scan configures its request timeout and rejects malformed provider 
     let configuredTimeout;
     try {
         const result = await geminiService.scanContent("Synthetic content for timeout validation", "Test", (apiKey, timeoutMs) => {
-                assert.equal(apiKey, "test-only-key");
-                configuredTimeout = timeoutMs;
-                return {
-                    models: {
-                        generateContent: async () => ({ text: "{" })
-                    }
-                };
-            });
+            assert.equal(apiKey, "test-only-key");
+            configuredTimeout = timeoutMs;
+            return {
+                models: {
+                    generateContent: async () => ({ text: "{" })
+                }
+            };
+        });
         assert.equal(configuredTimeout, 30000);
         assert.equal(result.scanStatus, "partial");
         assert.match(result.warning, /unusable results/);
@@ -1364,13 +1345,13 @@ test("Gemini provider failures remain explicit and do not become clean scan resu
     let requestCount = 0;
     try {
         const result = await geminiService.scanContent("Synthetic content for provider failure validation", "Test", () => ({
-                models: {
-                    generateContent: async () => {
-                        requestCount += 1;
-                        throw Object.assign(new Error("Synthetic provider failure"), { status: 400 });
-                    }
+            models: {
+                generateContent: async () => {
+                    requestCount += 1;
+                    throw Object.assign(new Error("Synthetic provider failure"), { status: 400 });
                 }
-            }));
+            }
+        }));
         assert.equal(requestCount, 1);
         assert.equal(result.scanStatus, "partial");
         assert.match(result.warning, /Gemini request failed/);
@@ -1390,4 +1371,86 @@ test("direct frontend routes return the built app and missing assets do not", as
     const missingAsset = await fetch(`${baseUrl}/missing-bundle.js`);
     assert.equal(missingAsset.status, 404);
     assert.doesNotMatch(missingAsset.headers.get("content-type") || "", /text\/html/);
+});
+
+test("draft creation freezes originalContent baseline and initial revision snapshot", async () => {
+    let persistedDraft;
+    await withStubs([
+        [Draft, {
+            create: async payload => {
+                persistedDraft = {
+                    ...payload,
+                    _id: "64f000000000000000000099",
+                    status: "Draft",
+                    findings: [],
+                    async save() { return this; }
+                };
+                return persistedDraft;
+            }
+        }],
+        [AuditLog, { create: async p => p }]
+    ], async () => {
+        const token = tokenForRole("creator", "creator-id");
+        const res = await fetch(`${baseUrl}/api/drafts`, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                title: "Baseline Spec Draft",
+                content: "First baseline sentence."
+            })
+        });
+
+        assert.equal(res.status, 201);
+        assert.equal(persistedDraft.originalContent, "First baseline sentence.");
+        assert.equal(persistedDraft.content, "First baseline sentence.");
+        assert.equal(Array.isArray(persistedDraft.revisions), true);
+        assert.equal(persistedDraft.revisions.length, 1);
+        assert.equal(persistedDraft.revisions[0].content, "First baseline sentence.");
+    });
+});
+
+test("draft updates preserve originalContent while recording new versions in revisions", async () => {
+    const existingDraft = {
+        _id: "64f000000000000000000099",
+        author: "creator-id",
+        organisationId: "test-organisation",
+        title: "Baseline Spec Draft",
+        content: "First baseline sentence.",
+        originalContent: "First baseline sentence.",
+        revisions: [{ content: "First baseline sentence.", savedAt: new Date() }],
+        status: "Draft",
+        findings: [],
+        async save() { return this; }
+    };
+
+    await withStubs([
+        [Draft, {
+            findOne: () => ({
+                then(resolve, reject) { return Promise.resolve(existingDraft).then(resolve, reject); }
+            })
+        }],
+        [AuditLog, { create: async p => p }]
+    ], async () => {
+        const token = tokenForRole("creator", "creator-id");
+        const res = await fetch(`${baseUrl}/api/drafts/${existingDraft._id}`, {
+            method: "PUT",
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                title: "Baseline Spec Draft",
+                content: "Second revised sentence."
+            })
+        });
+
+        assert.equal(res.status, 200);
+        assert.equal(existingDraft.originalContent, "First baseline sentence.");
+        assert.equal(existingDraft.content, "Second revised sentence.");
+        assert.equal(existingDraft.revisions.length, 2);
+        assert.equal(existingDraft.revisions[0].content, "First baseline sentence.");
+    });
 });

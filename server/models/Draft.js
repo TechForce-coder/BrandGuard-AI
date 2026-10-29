@@ -1,5 +1,23 @@
 const mongoose = require("mongoose");
 
+const revisionSchema = new mongoose.Schema(
+    {
+        content: {
+            type: String,
+            required: true
+        },
+        savedAt: {
+            type: Date,
+            default: Date.now
+        },
+        modifiedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User"
+        }
+    },
+    { _id: false }
+);
+
 const draftSchema = new mongoose.Schema(
     {
         title: {
@@ -10,6 +28,16 @@ const draftSchema = new mongoose.Schema(
         content: {
             type: String,
             default: ""
+        },
+        // Baseline copy preserved from the initial creation
+        originalContent: {
+            type: String,
+            default: ""
+        },
+        // Internal history of changes made across edits
+        revisions: {
+            type: [revisionSchema],
+            default: []
         },
         findings: {
             type: [mongoose.Schema.Types.Mixed],

@@ -1,4 +1,3 @@
-
 const Draft = require("../models/Draft");
 const Fact = require("../models/Fact");
 const RulebookEntry = require("../models/RulebookEntry");
@@ -15,7 +14,7 @@ const allowedChannels = new Set([
     "Other"
 ]);
 
-// Create a new draft
+// 1. Create a new draft with permanent originalContent baseline
 const createDraft = async (req, res) => {
     try {
         const { title, content, channel, hasImage, altText } = req.body;
@@ -58,9 +57,19 @@ const createDraft = async (req, res) => {
             });
         }
 
+        const draftContent = content || "";
+
         const draft = await Draft.create({
             title: title.trim(),
-            content: content || "",
+            content: draftContent,
+            originalContent: draftContent, // Baseline snapshot frozen on creation
+            revisions: [
+                {
+                    content: draftContent,
+                    savedAt: new Date(),
+                    modifiedBy: req.user.userId
+                }
+            ],
             channel: channel || "Website",
             hasImage: hasImage || false,
             altText: altText || "",
@@ -90,8 +99,7 @@ const createDraft = async (req, res) => {
     }
 };
 
-// Get all drafts
-
+// 2. Get all drafts
 const getDrafts = async (req, res) => {
     try {
         const role = String(req.user.role || "").toLowerCase();
@@ -128,6 +136,7 @@ const getDrafts = async (req, res) => {
 
             return {
                 ...draft,
+                originalContent: draft.originalContent || draft.content,
                 findings,
                 findingsCount: openFindingsCount
             };
@@ -147,6 +156,7 @@ const getDrafts = async (req, res) => {
     }
 };
 
+// 3. Get creator activity
 const getCreatorActivity = async (req, res) => {
     try {
         const ownedDrafts = await Draft.find({
@@ -174,6 +184,7 @@ const getCreatorActivity = async (req, res) => {
     }
 };
 
+// 4. Get dashboard stats
 const getDashboardStats = async (req, res) => {
     try {
         const role = String(req.user.role || "").trim().toLowerCase();
@@ -228,8 +239,7 @@ const getDashboardStats = async (req, res) => {
     }
 };
 
-
-// Get one draft by ID
+// 5. Get one draft by ID with diff baseline
 const getDraftById = async (req, res) => {
     try {
         const draft = await Draft.findOne({
@@ -267,10 +277,17 @@ const getDraftById = async (req, res) => {
             .sort({ createdAt: 1 })
             .lean();
 
+        const draftObj = typeof draft.toObject === "function" ? draft.toObject() : draft;
+
+        // Ensure originalContent fallback if missing on legacy entries
+        if (!draftObj.originalContent) {
+            draftObj.originalContent = draftObj.content;
+        }
+
         return res.status(200).json({
             success: true,
             draft: {
-                ...(typeof draft.toObject === "function" ? draft.toObject() : draft),
+                ...draftObj,
                 reviewHistory
             }
         });
@@ -286,8 +303,7 @@ const getDraftById = async (req, res) => {
     }
 };
 
-
-
+// 6. Update draft and record revision history
 const updateDraft = async (req, res) => {
     try {
         const { title, content, channel, hasImage, altText } = req.body;
@@ -330,12 +346,12 @@ const updateDraft = async (req, res) => {
             });
         }
 
-        // Find draft belonging to the user's organisation
         const draft = await Draft.findOne({
             _id: req.params.id,
             organisationId: req.user.organisationId
         });
-            console.log("Draft update check:", {
+
+        console.log("Draft update check:", {
             draftId: req.params.id,
             userId: req.user.userId,
             organisationId: req.user.organisationId,
@@ -371,14 +387,31 @@ const updateDraft = async (req, res) => {
         const newHasImage = hasImage ?? draft.hasImage;
         const newAltText = altText === undefined ? draft.altText : altText.trim();
 
-        // Check whether the actual draft content changed
         const contentChanged =
             draft.title !== newTitle ||
             draft.content !== newContent ||
             draft.channel !== newChannel ||
             draft.hasImage !== newHasImage ||
             draft.altText !== newAltText;
+
         const previousStatus = draft.status;
+
+        // Ensure originalContent is preserved from the original baseline
+        if (!draft.originalContent) {
+            draft.originalContent = draft.content;
+        }
+
+        // Push old text to revisions array if content was modified
+        if (draft.content !== newContent) {
+            if (!Array.isArray(draft.revisions)) {
+                draft.revisions = [];
+            }
+            draft.revisions.push({
+                content: draft.content,
+                savedAt: new Date(),
+                modifiedBy: req.user.userId
+            });
+        }
 
         draft.title = newTitle;
         draft.content = newContent;
@@ -386,8 +419,7 @@ const updateDraft = async (req, res) => {
         draft.hasImage = newHasImage;
         draft.altText = newAltText;
 
-        // Reset scan and approval data only when something changes
-
+        // Reset scan and approval data when content changes
         if (contentChanged) {
             draft.findings = [];
             draft.findingsCount = 0;
@@ -396,7 +428,6 @@ const updateDraft = async (req, res) => {
             draft.scanWarning = "";
             draft.status = "Draft";
         }
-
 
         await draft.save();
 
@@ -432,9 +463,7 @@ const updateDraft = async (req, res) => {
     }
 };
 
-
-// Scan a saved draft using Gemini AI
-
+// 7. Scan a saved draft using Gemini AI
 const scanDraft = async (req, res) => {
     try {
         const draft = await Draft.findOne({
@@ -566,7 +595,6 @@ const scanDraft = async (req, res) => {
             findingsCount: draft.findingsCount,
             summary: result?.summary || "",
 
-            // Return the full suggested content only after a complete scan.
             suggestedContent:
                 draft.scanStatus === "complete" &&
                 typeof result?.suggestedContent === "string"
@@ -595,7 +623,7 @@ const scanDraft = async (req, res) => {
     }
 };
 
-
+// 8. Submit draft for review
 const submitDraft = async (req, res) => {
     try {
         const draft = await Draft.findOne({
@@ -674,7 +702,6 @@ const submitDraft = async (req, res) => {
             });
         }
 
-        // Save audit history
         await recordAudit({
             draft: submittedDraft._id,
             user: req.user.userId,
@@ -702,12 +729,9 @@ const submitDraft = async (req, res) => {
     }
 };
 
-
-
-
+// 9. Review draft (Managers only)
 const reviewDraft = async (req, res) => {
     try {
-        // Only managers can review drafts
         const role = String(req.user?.role || "")
             .trim()
             .toLowerCase();
@@ -808,7 +832,6 @@ const reviewDraft = async (req, res) => {
             });
         }
 
-        // Save the review action in the audit log
         try {
             await recordAudit({
                 draft: reviewedDraft._id,
@@ -901,7 +924,7 @@ const reviewDraft = async (req, res) => {
     }
 };
 
-
+// 10. Add reviewer comment
 const addDraftComment = async (req, res) => {
     try {
         const { comment } = req.body;
@@ -958,8 +981,6 @@ const addDraftComment = async (req, res) => {
         });
     }
 };
-
-
 
 module.exports = {
     createDraft,

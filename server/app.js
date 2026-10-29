@@ -1,6 +1,9 @@
-const scanRoutes = require('./routes/scanRoutes');
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
+const fs = require("fs");
+
+const scanRoutes = require("./routes/scanRoutes");
 const authenticate = require("./middleware/authMiddleware");
 const authRoutes = require("./routes/authRoutes");
 const draftRoutes = require("./routes/draftRoutes");
@@ -56,14 +59,6 @@ app.get("/api/health", (req, res) => {
     });
 });
 
-// Root ping
-app.get("/", (req, res) => {
-    res.json({
-        success: true,
-        message: "BrandGuard AI Backend API is running"
-    });
-});
-
 // 404 handler for API routes
 app.use("/api", (req, res) => {
     res.status(404).json({
@@ -72,7 +67,42 @@ app.use("/api", (req, res) => {
     });
 });
 
-// Global 404 handler
+// Locate compiled static frontend assets
+const clientDistPath = path.resolve(__dirname, "../client/dist");
+const clientBuildPath = path.resolve(__dirname, "../client/build");
+const staticDir = fs.existsSync(clientDistPath) ? clientDistPath : clientBuildPath;
+
+// Serve static bundles (.js, .css, images, fonts)
+app.use(express.static(staticDir));
+
+// Root route: Serve SPA for browser navigation, JSON ping for API checks
+app.get("/", (req, res) => {
+    const indexPath = path.join(staticDir, "index.html");
+    if (req.accepts("html") && fs.existsSync(indexPath)) {
+        return res.sendFile(indexPath);
+    }
+    return res.json({
+        success: true,
+        message: "BrandGuard AI Backend API is running"
+    });
+});
+
+// SPA Fallback: Return index.html for direct frontend routes (e.g., /login, /drafts)
+// Pathless middleware is used here to ensure compatibility across all Express versions
+app.use((req, res, next) => {
+    if (req.method !== "GET") return next();
+
+    const indexPath = path.join(staticDir, "index.html");
+
+    // Only serve index.html for route paths without a file extension when HTML is requested
+    if (!path.extname(req.path) && req.accepts("html") && fs.existsSync(indexPath)) {
+        return res.sendFile(indexPath);
+    }
+
+    return next();
+});
+
+// Global 404 handler for missing assets or unhandled routes
 app.use((req, res) => {
     res.status(404).json({
         success: false,
