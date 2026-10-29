@@ -4,11 +4,11 @@ import { ArrowRight, Check, Eye, EyeOff, LockKeyhole, ShieldCheck, Sparkles } fr
 import { api } from '../api/api.js';
 import { isWorkspacePreviewSelectorDisabled } from '../utils/workspacePreview.js';
 
-export default function Login({ 
-  onLogin, 
-  sessionError = '', 
+export default function Login({
+  onLogin,
+  sessionError = '',
   developmentPreviewEnabled = false,
-  initialMode = 'login' 
+  initialMode = 'login'
 }) {
   const navigate = useNavigate();
 
@@ -23,7 +23,7 @@ export default function Login({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Sync mode if the route changes externally
+  // Synchronize internal state when the URL changes directly
   useEffect(() => {
     setMode(initialMode);
   }, [initialMode]);
@@ -227,7 +227,8 @@ export default function Login({
           )}
 
           <button type="submit" disabled={busy} className="btn-primary mt-6 w-full justify-center py-3">
-            {busy ? (mode === 'login' ? 'Signing in…' : 'Creating account…') : (mode === 'login' ? 'Sign in' : 'Create account')} <ArrowRight size={16} />
+            {busy ? (mode === 'login' ? 'Signing in…' : 'Creating account…') : (mode === 'login' ? 'Sign in' : 'Create account')}{' '}
+            <ArrowRight size={16} />
           </button>
 
           <p className="mt-4 text-center text-sm text-slate-600">

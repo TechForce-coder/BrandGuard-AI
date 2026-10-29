@@ -132,7 +132,7 @@ export default function App() {
     );
   }
 
-  // Allow both /login and /registration for unauthenticated visitors
+  // Handle both /login and /registration
   const isAuthRoute = location.pathname === '/login' || location.pathname === '/registration';
 
   if (isAuthRoute) {
