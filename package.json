@@ -23,5 +23,8 @@
   "bugs": {
     "url": "https://github.com/TechForce-coder/BrandGuard-AI/issues"
   },
-  "homepage": "https://github.com/TechForce-coder/BrandGuard-AI#readme"
+  "homepage": "https://github.com/TechForce-coder/BrandGuard-AI#readme",
+  "dependencies": {
+    "multer": "^2.5.0"
+  }
 }
