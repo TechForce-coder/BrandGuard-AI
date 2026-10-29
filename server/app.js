@@ -9,14 +9,14 @@ const findingRoutes = require("./routes/findingRoutes");
 const auditRoutes = require("./routes/auditRoutes");
 const rulebookRoutes = require("./routes/rulebookRoutes");
 const factRoutes = require("./routes/factRoutes");
-const path = require("path");
 
 const app = express();
-const frontendPath = path.join(__dirname, "../client/dist");
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Validate JSON object payloads
 app.use("/api", (req, res, next) => {
     if (
         req.body !== undefined &&
@@ -29,6 +29,8 @@ app.use("/api", (req, res, next) => {
     }
     return next();
 });
+
+// API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/drafts", draftRoutes);
 app.use("/api/organisations", organisationRoutes);
@@ -37,6 +39,7 @@ app.use("/api/audit", auditRoutes);
 app.use("/api/rulebook", rulebookRoutes);
 app.use("/api/facts", factRoutes);
 app.use("/api", scanRoutes);
+
 app.get("/api/protected", authenticate, (req, res) => {
     res.json({
         success: true,
@@ -45,7 +48,7 @@ app.get("/api/protected", authenticate, (req, res) => {
     });
 });
 
-// Health-check API
+// Health check
 app.get("/api/health", (req, res) => {
     res.json({
         success: true,
@@ -53,6 +56,15 @@ app.get("/api/health", (req, res) => {
     });
 });
 
+// Root ping
+app.get("/", (req, res) => {
+    res.json({
+        success: true,
+        message: "BrandGuard AI Backend API is running"
+    });
+});
+
+// 404 handler for API routes
 app.use("/api", (req, res) => {
     res.status(404).json({
         success: false,
@@ -60,25 +72,7 @@ app.use("/api", (req, res) => {
     });
 });
 
-app.use(express.static(frontendPath, {
-    dotfiles: "deny",
-    index: "index.html"
-}));
-
-app.get(/.*/, (req, res, next) => {
-    if (
-        req.method !== "GET" ||
-        path.extname(req.path) ||
-        !req.accepts("html")
-    ) {
-        return next();
-    }
-
-    res.sendFile(path.join(frontendPath, "index.html"), (error) => {
-        if (error) next(error);
-    });
-});
-
+// Global 404 handler
 app.use((req, res) => {
     res.status(404).json({
         success: false,
@@ -86,6 +80,7 @@ app.use((req, res) => {
     });
 });
 
+// Global error handler
 app.use((error, req, res, next) => {
     if (res.headersSent) return next(error);
 

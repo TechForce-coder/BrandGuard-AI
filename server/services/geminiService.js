@@ -191,7 +191,7 @@ Rules:
 `;
 
     const models = [
-        process.env.GEMINI_MODEL || "gemini-3.8-flash",
+        process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
         process.env.GEMINI_FALLBACK_MODEL
     ].filter(Boolean);
 
