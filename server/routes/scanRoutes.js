@@ -34,7 +34,7 @@ router.post('/upload-and-scan', upload.array('media', 5), async (req, res) => {
     }
 
     const results = [];
-    const model = genAI.getGenerativeModel({ model: "gemini-3.8-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
     const prompt = "Analyze this image for brand compliance. Point out any logos, text, or elements that look out of place, inappropriate, or low resolution.";
 
     // Loop through each uploaded file
