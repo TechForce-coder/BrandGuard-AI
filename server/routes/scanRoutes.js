@@ -3,6 +3,7 @@ const multer = require('multer');
 const { google } = require('googleapis');
 const { stream } = require('stream');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Scan = require('../models/Scan'); // Import model
 
 const router = express.Router();
 
@@ -51,7 +52,7 @@ router.post('/upload-and-scan', upload.single('media'), async (req, res) => {
 
     // --- B. Scan with Gemini ---
     const base64Data = buffer.toString('base64');
-    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
     const prompt = "Analyze this image for brand compliance. Point out any logos, text, or elements that look out of place, inappropriate, or low resolution.";
     
@@ -65,7 +66,16 @@ router.post('/upload-and-scan', upload.single('media'), async (req, res) => {
     const geminiResult = await model.generateContent([prompt, imagePart]);
     const analysis = geminiResult.response.text();
 
-    // --- C. Return results ---
+    // --- C. Save to MongoDB ---
+    const newScan = new Scan({
+      fileName: originalname,
+      driveUrl: driveLink,
+      geminiAnalysis: analysis
+    });
+    await newScan.save();
+    console.log('Scan record successfully saved to MongoDB!');
+
+    // --- D. Return results ---
     res.status(200).json({
       success: true,
       driveUrl: driveLink,
@@ -75,6 +85,17 @@ router.post('/upload-and-scan', upload.single('media'), async (req, res) => {
   } catch (error) {
     console.error('Pipeline Error:', error);
     res.status(500).json({ error: 'Failed to process file' });
+  }
+});
+
+// --- E. Add History Route to Fetch Stored Scans ---
+router.get('/history', async (req, res) => {
+  try {
+    const scans = await Scan.find().sort({ createdAt: -1 }); // Newest first
+    res.status(200).json(scans);
+  } catch (error) {
+    console.error('History Fetch Error:', error);
+    res.status(500).json({ error: 'Failed to fetch scan history' });
   }
 });
 
