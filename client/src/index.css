@@ -128,6 +128,9 @@ a { color: inherit; text-decoration: none; }
   .nav-pill:hover { @apply bg-slate-100 text-slate-950; }
   .nav-pill--active { @apply bg-blue-50 text-blue-900; }
   .mobile-menu-enter { animation: menu-enter 180ms ease-out both; transform-origin: top; }
+  .demo-access-panel { animation: demo-access-fade-in 220ms ease-out both; }
+  .demo-account-card { @apply transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-md; }
+  .demo-account-card:hover { box-shadow: 0 8px 18px rgb(15 23 42 / 8%); }
 }
 
 @keyframes page-enter {
@@ -138,8 +141,15 @@ a { color: inherit; text-decoration: none; }
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
+@keyframes demo-access-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
+  .demo-access-panel { animation: none; }
+  .demo-account-card { transition: none; }
+  .demo-account-card:hover { transform: none; }
   *, *::before, *::after {
     animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;

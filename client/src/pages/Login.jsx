@@ -1,8 +1,128 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Check, Eye, EyeOff, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react';
+import { ArrowRight, Check, CheckCheck, Clipboard, Eye, EyeOff, FilePlus2, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react';
 import { api } from '../api/api.js';
+import { demoAccounts } from '../config/demoAccounts.js';
 import { isWorkspacePreviewSelectorDisabled } from '../utils/workspacePreview.js';
+
+function DemoAccountCard({ account, onUseCredentials }) {
+  const [copied, setCopied] = useState('');
+  const [copyError, setCopyError] = useState(false);
+  const timeoutRef = useRef(null);
+  const RoleIcon = account.role === 'Manager' ? ShieldCheck : FilePlus2;
+
+  useEffect(() => () => clearTimeout(timeoutRef.current), []);
+
+  async function copyCredential(field, value) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const temporaryInput = document.createElement('textarea');
+        temporaryInput.value = value;
+        temporaryInput.setAttribute('readonly', '');
+        temporaryInput.style.position = 'fixed';
+        temporaryInput.style.opacity = '0';
+        document.body.appendChild(temporaryInput);
+        temporaryInput.select();
+        const copiedSuccessfully = document.execCommand('copy');
+        temporaryInput.remove();
+        if (!copiedSuccessfully) throw new Error('Clipboard copy was unsuccessful.');
+      }
+
+      setCopied(field);
+      setCopyError(false);
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setCopied(''), 1600);
+    } catch {
+      setCopied('');
+      setCopyError(true);
+    }
+  }
+
+  return (
+    <article className="demo-account-card min-w-0 rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-800">
+          <RoleIcon size={13} aria-hidden="true" />
+        </span>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="inline-flex shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-blue-900">
+            {account.role}
+          </span>
+          <p className="truncate whitespace-nowrap text-[9px] leading-4 text-slate-600" title={account.description}>
+            {account.description}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-1.5 space-y-1">
+        {[
+          ['Email', account.email, 'email'],
+          ['Password', account.password, 'password']
+        ].map(([label, value, field]) => (
+          <div key={field} className="min-w-0">
+            <p className="text-[9px] font-medium leading-3 text-slate-500">{label}</p>
+            <div className="mt-0.5 flex min-w-0 items-center gap-1">
+              <span
+                className="min-w-0 flex-1 truncate whitespace-nowrap text-[10px] font-medium leading-4 text-slate-800"
+                title={value}
+              >
+                {value}
+              </span>
+              <button
+                type="button"
+                className="inline-flex min-h-6 shrink-0 items-center gap-1 rounded-md border border-slate-200 px-1.5 text-[9px] font-semibold text-slate-700 transition hover:bg-slate-50"
+                onClick={() => copyCredential(field, value)}
+                aria-label={`Copy ${account.role} demo ${label.toLowerCase()}`}
+              >
+                {copied === field
+                  ? <CheckCheck size={12} aria-hidden="true" />
+                  : <Clipboard size={12} aria-hidden="true" />}
+                {copied === field ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        {copied ? 'Copied' : copyError ? 'Could not copy. Please select and copy the text.' : ''}
+      </p>
+      <button
+        type="button"
+        className="btn-secondary mt-1.5 min-h-8 w-full px-2 py-1.5 text-[10px]"
+        onClick={() => onUseCredentials(account.email, account.password)}
+      >
+        Use these credentials
+      </button>
+    </article>
+  );
+}
+
+function DemoAccessPanel({ onUseCredentials, headingId }) {
+  return (
+    <section
+      className="demo-access-panel w-full max-w-md rounded-xl border border-blue-100 bg-white/90 p-2.5 shadow-sm sm:p-3"
+      aria-labelledby={headingId}
+    >
+      <div className="flex items-baseline gap-2">
+        <p className="shrink-0 text-[9px] font-bold uppercase tracking-[.14em] text-blue-800">For judges</p>
+        <h3 id={headingId} className="truncate text-xs font-semibold text-slate-900">
+          Hackathon demo access
+        </h3>
+      </div>
+      <div className="mt-2 grid min-w-0 grid-cols-1 gap-2 min-[900px]:grid-cols-2">
+        {demoAccounts.map(account => (
+          <DemoAccountCard key={account.role} account={account} onUseCredentials={onUseCredentials} />
+        ))}
+      </div>
+      <p className="mt-1.5 whitespace-nowrap text-center text-[9px] leading-4 text-slate-600">
+        These are demo accounts for judges. No real data.
+      </p>
+    </section>
+  );
+}
 
 export default function Login({
   onLogin,
@@ -71,25 +191,37 @@ export default function Login({
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10 sm:px-6">
-      <div className="grid w-full max-w-[960px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/5 md:min-h-[560px] md:grid-cols-[1.05fr_.95fr]">
-        <aside className="hidden flex-col justify-between border-r border-slate-200 bg-slate-50 p-10 text-slate-900 md:flex lg:p-12">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-6 sm:px-6 sm:py-10">
+      <div className="grid w-full max-w-[960px] rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/5 md:min-h-[560px] md:grid-cols-[1.05fr_.95fr]">
+        <aside className="hidden flex-col justify-between border-r border-slate-200 bg-slate-50 p-8 text-slate-900 md:flex lg:p-10">
           <div className="relative flex items-center gap-3">
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-900 text-blue-100">
               <ShieldCheck size={25} strokeWidth={1.8} />
             </span>
             <span className="text-xl font-semibold tracking-tight text-slate-950">BrandGuard</span>
           </div>
-          <div className="relative max-w-md">
-            <span className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[.12em] text-blue-800">
-              <Sparkles size={13} /> Brand governance platform
-            </span>
-            <h1 className="mt-6 text-[40px] font-semibold leading-[1.12] tracking-tight lg:text-5xl">
-              Confident content.<br />Consistent brand.
-            </h1>
-            <p className="mt-5 max-w-sm text-sm leading-7 text-slate-600">
-              One thoughtful workflow to review, improve, and approve content before it reaches your audience.
-            </p>
+          <div className="relative flex w-full flex-col gap-4">
+            {mode === 'login' && import.meta.env.VITE_SHOW_DEMO_ACCESS !== 'false' && (
+              <DemoAccessPanel
+                headingId="desktop-demo-access-heading"
+                onUseCredentials={(demoEmail, demoPassword) => {
+                  setEmail(demoEmail);
+                  setPassword(demoPassword);
+                  setError('');
+                }}
+              />
+            )}
+            <div className="max-w-md">
+              <span className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[.12em] text-blue-800">
+                <Sparkles size={13} /> Brand governance platform
+              </span>
+              <h1 className="mt-6 text-[40px] font-semibold leading-[1.12] tracking-tight lg:text-5xl">
+                Confident content.<br />Consistent brand.
+              </h1>
+              <p className="mt-5 max-w-sm text-sm leading-7 text-slate-600">
+                One thoughtful workflow to review, improve, and approve content before it reaches your audience.
+              </p>
+            </div>
           </div>
           <div className="relative flex items-center gap-2 text-xs text-slate-500">
             <LockKeyhole size={14} /> Human decisions stay in control.
@@ -248,6 +380,18 @@ export default function Login({
             <span>Use your organization credentials. Your account is managed by your organization.</span>
           </div>
         </form>
+        {mode === 'login' && import.meta.env.VITE_SHOW_DEMO_ACCESS !== 'false' && (
+          <div className="px-4 pb-5 sm:px-7 md:hidden">
+            <DemoAccessPanel
+              headingId="mobile-demo-access-heading"
+              onUseCredentials={(demoEmail, demoPassword) => {
+                setEmail(demoEmail);
+                setPassword(demoPassword);
+                setError('');
+              }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
