@@ -42,9 +42,16 @@ async function request(path, options = {}) {
 function normalizeDraft(draft) {
   if (!draft || typeof draft !== 'object') return draft;
 
+  const content = draft.content ?? draft.text ?? '';
+
   return {
     ...draft,
     id: String(draft.id || draft._id || ''),
+    content,
+    // Baseline snapshot frozen from initial save
+    originalContent: draft.originalContent || content,
+    // Revision history list
+    revisions: Array.isArray(draft.revisions) ? draft.revisions : [],
     author: typeof draft.author === 'object' && draft.author !== null
       ? draft.author.name || draft.author.email || 'Unknown'
       : draft.author || 'You',
@@ -114,16 +121,17 @@ export const api = {
 
     return result.users;
   },
-  async createOrganisation(name) {
-  if (typeof name !== 'string' || !name.trim()) {
-    throw new Error('Organisation name is required.');
-  }
 
-  return request('/organisations', {
-    method: 'POST',
-    body: JSON.stringify({ name: name.trim() })
-  });
-},
+  async createOrganisation(name) {
+    if (typeof name !== 'string' || !name.trim()) {
+      throw new Error('Organisation name is required.');
+    }
+
+    return request('/organisations', {
+      method: 'POST',
+      body: JSON.stringify({ name: name.trim() })
+    });
+  },
 
   async updateUserRole(userId, role) {
     const allowedRoles = ['creator', 'reviewer', 'manager', 'admin'];
@@ -137,7 +145,6 @@ export const api = {
       body: JSON.stringify({ role: String(role).toLowerCase() })
     });
   },
-
 
   hasSession() {
     return Boolean(localStorage.getItem('brandguard-token'));
@@ -200,7 +207,7 @@ export const api = {
           body: JSON.stringify(payload)
         });
 
-    return result?.draft || result;
+    return normalizeDraft(result?.draft || result);
   },
 
   async scanDraft(id, text) {
@@ -287,7 +294,7 @@ export const api = {
     return request('/audit');
   },
 
-  // NEW METHOD: Drive + Gemini Upload 
+  // Media Drive upload & scan
   async uploadAndScanFile(file) {
     const token = localStorage.getItem('brandguard-token');
     const formData = new FormData();
@@ -298,7 +305,7 @@ export const api = {
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {})
       },
-      body: formData // Fetch sets the multipart boundary automatically
+      body: formData
     });
 
     if (!response.ok) {

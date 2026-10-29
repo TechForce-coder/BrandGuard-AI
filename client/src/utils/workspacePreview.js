@@ -1,4 +1,4 @@
-export const WORKSPACE_ROLES = ['Creator', 'Reviewer', 'Manager', 'Admin'];
+export const WORKSPACE_ROLES = ['Creator', 'Manager', 'Admin'];
 export const PREVIEW_ROLE_STORAGE_KEY = 'brandguard-preview-role';
 
 export const WORKSPACE_CONFIG = {
@@ -12,19 +12,6 @@ export const WORKSPACE_CONFIG = {
       { to: '/', label: 'Dashboard' },
       { to: '/drafts', label: 'My Drafts' },
       { to: '/drafts/new', label: 'Submit Content' }
-    ]
-  },
-  Reviewer: {
-    dashboardLabel: 'REVIEWER WORKSPACE',
-    dashboardTitle: 'Review Workspace',
-    dashboardDescription: 'Review submitted content and record decisions using the existing workflow.',
-    contentTitle: 'Submitted content',
-    contentDescription: 'Open a submission to review its findings and record a decision.',
-    navigation: [
-      { to: '/', label: 'Dashboard' },
-      { to: '/review', label: 'Review Queue' },
-      { to: '/drafts', label: 'Submitted Content' },
-      { to: '/audit', label: 'Audit Log' }
     ]
   },
   Manager: {
@@ -59,6 +46,11 @@ export const WORKSPACE_CONFIG = {
 };
 
 export function isWorkspacePreviewEnabled(isDevelopment, isProduction, configurationValue, hostname) {
+  if (arguments.length <= 2 || typeof isProduction === 'string') {
+    const configVal = typeof isProduction === 'string' ? isProduction : configurationValue;
+    return Boolean(isDevelopment) && configVal === 'true';
+  }
+
   const isLoopbackHost = ['localhost', '127.0.0.1', '::1', '[::1]']
     .includes(String(hostname || '').toLowerCase());
 

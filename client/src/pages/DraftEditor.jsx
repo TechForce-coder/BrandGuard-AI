@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   CheckCircle2,
+  GitCompare,
   LoaderCircle,
   ImagePlus,
   ScanLine,
@@ -13,6 +14,7 @@ import {
 
 import { api } from '../api/api.js';
 import Editor from '../components/Editor.jsx';
+import DiffViewer from '../components/DiffViewer.jsx';
 import FindingsPanel from '../components/FindingsPanel.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { useToast } from '../components/Toast.jsx';
@@ -45,6 +47,8 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
   const [title, setTitle] = useState('');
   const [channel, setChannel] = useState('');
   const [text, setText] = useState('');
+  const [originalContent, setOriginalContent] = useState('');
+  const [showDiff, setShowDiff] = useState(false);
   const [hasImage, setHasImage] = useState(false);
   const [altText, setAltText] = useState('');
   const [imageFile, setImageFile] = useState(null);
@@ -129,6 +133,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setTitle(editorState.title);
       setChannel(editorState.channel);
       setText(editorState.content);
+      setOriginalContent(data?.originalContent || editorState.content || '');
       setHasImage(editorState.hasImage);
       setAltText(editorState.altText);
       setFindings(editorState.findings);
@@ -272,6 +277,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setTitle(editorState.title);
       setChannel(editorState.channel);
       setText(editorState.content);
+      setOriginalContent(saved.originalContent || originalContent || editorState.content);
       setHasImage(editorState.hasImage);
       setAltText(editorState.altText);
       setStatus(editorState.status);
@@ -331,43 +337,42 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
     }
   }
 
+  async function handleApplyFullSuggestion() {
+    if (!canMutateInWorkspace(previewMode)) {
+      toast.warning('Applying suggestions is disabled in development workspace preview.');
+      return;
+    }
 
-async function handleApplyFullSuggestion() {
-  if (!canMutateInWorkspace(previewMode)) {
-    toast.warning('Applying suggestions is disabled in development workspace preview.');
-    return;
+    if (
+      typeof suggestedContent !== 'string' ||
+      !suggestedContent.trim()
+    ) {
+      toast.warning('No complete suggested content is available.');
+      return;
+    }
+
+    try {
+      setError('');
+
+      const saved = await handleSave({
+        content: suggestedContent,
+        navigateAfter: false,
+      });
+
+      if (!saved) return;
+
+      setScanned(false);
+      setScanStatus('not-scanned');
+      setScanWarning('');
+      setSuggestedContent('');
+
+      toast.success('Suggested content saved. Run a fresh scan when ready.');
+    } catch (err) {
+      const message = err.message || 'Failed to apply suggested content.';
+      setError(message);
+      toast.error(message);
+    }
   }
-
-  if (
-    typeof suggestedContent !== 'string' ||
-    !suggestedContent.trim()
-  ) {
-    toast.warning('No complete suggested content is available.');
-    return;
-  }
-
-  try {
-    setError('');
-
-    const saved = await handleSave({
-      content: suggestedContent,
-      navigateAfter: false,
-    });
-
-    if (!saved) return;
-
-    setScanned(false);
-    setScanStatus('not-scanned');
-    setScanWarning('');
-    setSuggestedContent('');
-
-    toast.success('Suggested content saved. Run a fresh scan when ready.');
-  } catch (err) {
-    const message = err.message || 'Failed to apply suggested content.';
-    setError(message);
-    toast.error(message);
-  }
-}
 
   async function handleScan() {
     if (!canMutateInWorkspace(previewMode)) {
@@ -585,6 +590,8 @@ async function handleApplyFullSuggestion() {
     );
   }
 
+  const hasRevisions = Boolean(originalContent && originalContent.trim() !== text.trim());
+
   return (
     <div className="space-y-6">
       <button
@@ -666,10 +673,23 @@ async function handleApplyFullSuggestion() {
         </div>
 
         <div className="space-y-2">
-          <label htmlFor="draft-content" className="block text-sm font-medium text-slate-700">
-            Draft content{' '}
-            <span className="text-rose-600" aria-hidden="true">*</span>
-          </label>
+          <div className="flex items-center justify-between">
+            <label htmlFor="draft-content" className="block text-sm font-medium text-slate-700">
+              Draft content{' '}
+              <span className="text-rose-600" aria-hidden="true">*</span>
+            </label>
+
+            {hasRevisions && (
+              <button
+                type="button"
+                onClick={() => setShowDiff(prev => !prev)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:text-blue-900 transition"
+              >
+                <GitCompare size={14} />
+                {showDiff ? 'Hide baseline diff' : 'Compare with original baseline'}
+              </button>
+            )}
+          </div>
 
           <Editor
             value={text}
@@ -683,10 +703,27 @@ async function handleApplyFullSuggestion() {
             readOnly={readOnly}
           />
 
-          <div className="flex justify-end text-xs text-slate-500">
-            {text.length.toLocaleString()} characters
+          <div className="flex justify-between items-center text-xs text-slate-500">
+            <span>
+              {hasRevisions ? (
+                <span className="text-emerald-700 font-medium">Revisions active from baseline</span>
+              ) : (
+                'Initial working baseline'
+              )}
+            </span>
+            <span>{text.length.toLocaleString()} characters</span>
           </div>
         </div>
+
+        {/* Side-by-Side Diff Comparison Panel */}
+        {showDiff && hasRevisions && (
+          <div className="mt-4">
+            <DiffViewer
+              originalContent={originalContent}
+              currentContent={text}
+            />
+          </div>
+        )}
 
         <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
