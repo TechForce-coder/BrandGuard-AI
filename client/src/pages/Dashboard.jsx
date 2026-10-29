@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -28,6 +28,140 @@ const roleActions = {
   Manager: { label: 'Open approval workflow', to: '/review', icon: ArrowRight },
   Admin: { label: 'Administration', to: '/settings', icon: Settings }
 };
+
+function formatContentUpdated(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  }).format(date);
+}
+
+function ApprovalGauge({ label, count, total, startColor, endColor, textColor, index, unavailable }) {
+  const [reducedMotion, setReducedMotion] = useState(() => (
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  ));
+  const [progress, setProgress] = useState(0);
+  const [animatedCount, setAnimatedCount] = useState(count);
+  const gradientId = `approval-gauge-${useId().replace(/:/g, '')}`;
+  const ratio = total > 0 ? Math.min(count / total, 1) : 0;
+  const percent = total > 0 ? Math.round((count / total) * 100) : 0;
+  const circumference = 2 * Math.PI * 42;
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updateReducedMotion = () => setReducedMotion(mediaQuery.matches);
+    mediaQuery.addEventListener('change', updateReducedMotion);
+    return () => mediaQuery.removeEventListener('change', updateReducedMotion);
+  }, []);
+
+  useEffect(() => {
+    if (unavailable) {
+      setProgress(0);
+      setAnimatedCount(count);
+      return undefined;
+    }
+
+    if (reducedMotion) {
+      setProgress(ratio);
+      setAnimatedCount(count);
+      return undefined;
+    }
+
+    setProgress(0);
+    setAnimatedCount(0);
+    const progressFrame = window.requestAnimationFrame(() => setProgress(ratio));
+    let animationFrame;
+    let startTime;
+    const delay = window.setTimeout(() => {
+      const animateCount = timestamp => {
+        if (startTime === undefined) startTime = timestamp;
+        const elapsed = Math.min((timestamp - startTime) / 900, 1);
+        const eased = 1 - ((1 - elapsed) ** 3);
+        setAnimatedCount(Math.round(count * eased));
+        if (elapsed < 1) {
+          animationFrame = window.requestAnimationFrame(animateCount);
+        }
+      };
+      animationFrame = window.requestAnimationFrame(animateCount);
+    }, index * 120);
+
+    return () => {
+      window.cancelAnimationFrame(progressFrame);
+      window.clearTimeout(delay);
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+    };
+  }, [count, index, ratio, reducedMotion, unavailable]);
+
+  return (
+    <div
+      className="approval-gauge"
+      role="img"
+      aria-label={unavailable
+        ? `${label}: data unavailable`
+        : `${label}: ${count} of ${total} items, ${percent} percent`}
+      tabIndex={0}
+      style={{ '--gauge-delay': `${index * 120}ms` }}
+    >
+      <span className="approval-gauge__tooltip" role="tooltip" aria-hidden="true">
+        {count} of {total} items ({percent}%)
+      </span>
+      <div className="approval-gauge__visual">
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <defs>
+            <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={startColor} />
+              <stop offset="100%" stopColor={endColor} />
+            </linearGradient>
+          </defs>
+          <circle className="approval-gauge__track" cx="50" cy="50" r="42" />
+          {count > 0 && total > 0 && (
+            <>
+              <circle
+                className="approval-gauge__arc"
+                cx="50"
+                cy="50"
+                r="42"
+                transform="rotate(-90 50 50)"
+                stroke={`url(#${gradientId})`}
+                strokeDasharray={circumference}
+                strokeDashoffset={circumference * (1 - progress)}
+              />
+              <g
+                className="approval-gauge__knob"
+                style={{ transform: `rotate(${progress * 360}deg)` }}
+              >
+                <circle
+                  cx="50"
+                  cy="8"
+                  r="4.5"
+                  fill={endColor}
+                  stroke="white"
+                  strokeWidth="2.5"
+                />
+              </g>
+            </>
+          )}
+        </svg>
+        <div className="approval-gauge__center">
+          <span className="approval-gauge__count" style={{ color: textColor }}>
+            {unavailable ? '—' : animatedCount.toLocaleString()}
+          </span>
+          <span className="approval-gauge__percentage">
+            {unavailable ? '—' : percent}% of total
+          </span>
+        </div>
+      </div>
+      <span className="approval-gauge__label">{label}</span>
+    </div>
+  );
+}
 
 export default function Dashboard({ role, actualRole = role, previewMode = false, showDrafts = false }) {
   const [drafts, setDrafts] = useState([]);
@@ -216,6 +350,7 @@ const visible = useMemo(() => {
   const pending = stats?.pendingReviews ?? 0;
   const reviewed = stats?.approvedContent ?? 0;
   const needs = stats?.needsChanges ?? 0;
+  const totalContent = stats?.totalContent ?? 0;
   const flagged = stats?.flaggedContent ?? 0;
   const presentation = WORKSPACE_CONFIG[role] || WORKSPACE_CONFIG.Creator;
   const action = roleActions[role] || roleActions.Creator;
@@ -311,7 +446,7 @@ const visible = useMemo(() => {
       </div>}
 
       <div className={`grid min-w-0 gap-6 ${showDrafts ? '' : 'xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,1fr)]'}`}>
-        <section className="surface-card min-w-0 overflow-hidden">
+        <section className="surface-card min-w-0">
           <div className="space-y-4 border-b border-slate-100 p-5 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -367,44 +502,61 @@ const visible = useMemo(() => {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
+          <div className="min-w-0">
+            <table className="dashboard-content-table w-full text-left text-sm" aria-label="Content items">
               <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                 <tr>
                   {['Content item', 'Author', 'Findings', 'Status', 'Updated', ''].map((heading, index) => (
-                    <th key={`${heading}-${index}`} className="px-4 py-3.5 font-semibold sm:px-5">
+                    <th key={`${heading}-${index}`} scope="col" className="px-3 py-3.5 font-semibold">
                       {heading}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {visible.map((draft) => (
-                  <tr key={draft.id} className="hover:bg-slate-50/70">
-                    <td className="px-4 py-4 sm:px-5">
-                      <p className="font-semibold text-slate-900">{draft.title}</p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Channel: <span className="text-blue-700">{draft.channel || 'Unspecified'}</span>
-                        {' · '}ID: #{draft.id || '—'}
+                  <tr key={draft.id} className="transition-colors hover:bg-slate-50/70">
+                    <td data-label="Content item" aria-label={`Content item: ${draft.title || 'Untitled'}`} className="dashboard-content-table__item px-3 py-3">
+                      <p className="dashboard-content-table__title font-semibold text-slate-900" title={draft.title || 'Untitled'}>
+                        {draft.title || 'Untitled'}
+                      </p>
+                      <p className="dashboard-content-table__meta mt-1 text-xs text-slate-500">
+                        <span title={`Channel: ${draft.channel || 'Unspecified'}`}>
+                          Channel: <span className="text-blue-700">{draft.channel || 'Unspecified'}</span>
+                        </span>
+                        <span title={`ID: ${draft.id || '—'}`}>
+                          <span className="sr-only">ID: {draft.id || '—'}</span>
+                          #{draft.id ? String(draft.id).slice(-6) : '—'}
+                        </span>
                       </p>
                     </td>
-                    <td className="px-4 py-4 text-slate-600 sm:px-5">{draft.author}</td>
-                    <td className="px-4 py-4 sm:px-5">
-                      <span className={`rounded-md border px-2.5 py-1 text-xs font-semibold ${
-                        draft.findingsCount
-                          ? 'border-rose-200 bg-rose-50 text-rose-700'
-                          : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    <td data-label="Author" aria-label={`Author: ${draft.author || '—'}`} className="dashboard-content-table__author px-3 py-3 text-slate-600">
+                      <span title={draft.author || '—'}>{draft.author || '—'}</span>
+                    </td>
+                    <td data-label="Findings" aria-label={`Findings: ${draft.findingsCount} ${draft.findingsCount === 1 ? 'issue' : 'issues'}`} className="dashboard-content-table__findings px-3 py-3">
+                      <span className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                        draft.findingsCount >= 3
+                          ? 'bg-rose-100 text-rose-800'
+                          : draft.findingsCount > 0
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-emerald-100 text-emerald-800'
                       }`}>
-                        {draft.findingsCount} {draft.findingsCount ? 'violations' : 'issues'}
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-70" aria-hidden="true" />
+                        {draft.findingsCount} {draft.findingsCount === 1 ? 'issue' : 'issues'}
                       </span>
                     </td>
-                    <td className="px-4 py-4 sm:px-5"><StatusBadge status={draft.status} /></td>
-                    <td className="whitespace-nowrap px-4 py-4 text-xs text-slate-500 sm:px-5">
-                      {formatDateTime(draft.updated)}
+                    <td data-label="Status" aria-label={`Status: ${draft.status}`} className="dashboard-content-table__status px-3 py-3">
+                      <StatusBadge status={draft.status} />
                     </td>
-                    <td className="px-4 py-4 sm:px-5">
+                    <td data-label="Updated" aria-label={`Updated: ${formatDateTime(draft.updated)}`} className="dashboard-content-table__updated whitespace-nowrap px-3 py-3 text-xs text-slate-500">
+                      <time dateTime={draft.updated || undefined} title={formatDateTime(draft.updated)}>
+                        {formatContentUpdated(draft.updated)}
+                      </time>
+                    </td>
+                    <td data-label="Actions" className="dashboard-content-table__action px-1.5 py-3">
                       <button
-                        className="btn-secondary !px-3 !py-1.5"
+                        type="button"
+                        className="btn-secondary dashboard-content-table__button"
                         onClick={() => navigate(`/drafts/${draft.id}`)}
                       >
                         {role === 'Creator' && ['Draft', 'Needs Changes'].includes(draft.status) ? 'Edit' : 'Review'}
@@ -413,7 +565,7 @@ const visible = useMemo(() => {
                   </tr>
                 ))}
                 {!visible.length && (
-                  <tr>
+                  <tr className="dashboard-content-table__empty">
                     <td colSpan="6" className="px-5 py-14 text-center">
                       <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
                         <FileText size={21} aria-hidden="true" />
@@ -449,21 +601,46 @@ const visible = useMemo(() => {
                 <Workflow size={17} aria-hidden="true" />
               </span>
             </div>
-            <div className="mt-5 space-y-4">
+            <div className="approval-gauges mt-5">
               {[
-                { label: 'Approved', value: reviewed, color: 'bg-emerald-500', text: 'text-emerald-700' },
-                { label: 'Pending approval', value: pending, color: 'bg-amber-400', text: 'text-amber-700' },
-                { label: 'Needs changes', value: needs, color: 'bg-rose-400', text: 'text-rose-700' }
-              ].map(({ label, value, color, text }) => (
-                <div key={label} className="flex items-center justify-between gap-3">
-                  <span className="flex min-w-0 items-center gap-2.5 text-sm text-slate-600">
-                    <span className={`h-2 w-2 shrink-0 rounded-full ${color}`} />
-                    {label}
-                  </span>
-                  <span className={`text-sm font-semibold ${text}`}>{statsUnavailable ? '—' : value}</span>
-                </div>
+                {
+                  label: 'Approved',
+                  count: reviewed,
+                  startColor: '#34d399',
+                  endColor: '#0f766e',
+                  textColor: '#047857'
+                },
+                {
+                  label: 'Pending approval',
+                  count: pending,
+                  startColor: '#fbbf24',
+                  endColor: '#ea580c',
+                  textColor: '#b45309'
+                },
+                {
+                  label: 'Needs changes',
+                  count: needs,
+                  startColor: '#f472b6',
+                  endColor: '#e11d48',
+                  textColor: '#be123c'
+                }
+              ].map((gauge, index) => (
+                <ApprovalGauge
+                  key={gauge.label}
+                  {...gauge}
+                  total={totalContent}
+                  index={index}
+                  unavailable={statsUnavailable}
+                />
               ))}
             </div>
+            <p className="approval-gauge__total">
+              {statsUnavailable
+                ? 'Total content: —'
+                : totalContent === 0
+                  ? 'No content yet'
+                  : `Total content: ${totalContent.toLocaleString()}`}
+            </p>
           </section>
 
           <section className="surface-card p-5 sm:p-6">

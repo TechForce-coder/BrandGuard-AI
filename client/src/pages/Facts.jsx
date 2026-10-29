@@ -162,7 +162,7 @@ export default function Facts({ actualRole = '', previewMode = false }) {
             {loading ? 'Loading approved facts…' : error ? 'Approved facts unavailable' : `${facts.length} ${facts.length === 1 ? 'reference' : 'references'}`}
           </p>
         </div>
-        <div className="overflow-x-auto">
+        <div className="horizontal-scroll-fade" role="region" aria-label="Fact register table; scroll horizontally on small screens" tabIndex={0}>
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
               <tr>{['Fact / reference', 'Owner', 'Valid until', 'Status', 'Actions'].map(heading => <th className="px-5 py-3 font-semibold" key={heading}>{heading}</th>)}</tr>

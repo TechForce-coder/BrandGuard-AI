@@ -145,7 +145,7 @@ export default function Settings() {
             No users found in this organisation.
           </p>
         ) : (
-          <div className="mt-4 overflow-x-auto">
+          <div className="horizontal-scroll-fade mt-4" role="region" aria-label="Organization users table; scroll horizontally on small screens" tabIndex={0}>
             <table className="w-full min-w-[580px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-xs text-slate-500">
