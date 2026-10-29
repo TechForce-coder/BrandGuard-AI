@@ -188,7 +188,6 @@ export const api = {
       content: draft.content ?? draft.text ?? '',
       channel: draft.channel || 'Website',
       hasImage: draft.hasImage === true,
-      imageUrl: draft.imageUrl || '',
       altText: draft.altText || ''
     };
     const result = draft.id
@@ -289,19 +288,10 @@ export const api = {
   },
 
   // NEW METHOD: Drive + Gemini Upload 
-  async uploadAndScanFile(file, draftId, imageUrl = '') {
-    if (typeof draftId !== 'string' || !draftId.trim()) {
-      throw new Error('Save the draft before scanning its image.');
-    }
-    if (!file && !imageUrl) {
-      throw new Error('Upload an image or enter an image URL before scanning.');
-    }
-
+  async uploadAndScanFile(file) {
     const token = localStorage.getItem('brandguard-token');
     const formData = new FormData();
-    if (file) formData.append('media', file);
-    formData.append('draftId', draftId);
-    if (imageUrl) formData.append('imageUrl', imageUrl);
+    formData.append('media', file);
 
     const response = await fetch(`${API_URL}/upload-and-scan`, {
       method: 'POST',
@@ -313,13 +303,9 @@ export const api = {
 
     if (!response.ok) {
       const errBody = await response.json().catch(() => null);
-      throw new Error(errBody?.message || errBody?.error || `Upload failed (${response.status})`);
+      throw new Error(errBody?.error || `Upload failed (${response.status})`);
     }
 
-    const result = await response.json();
-    if (result?.success !== true || !Array.isArray(result.scans)) {
-      throw new Error(result?.message || 'The image scan response was not in the expected format.');
-    }
-    return result;
+    return response.json();
   }
 };

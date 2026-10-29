@@ -18,6 +18,7 @@ import {
 import { api } from '../api/api.js';
 import StatCard from '../components/StatCard.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
+import { useToast } from '../components/Toast.jsx';
 import { formatDateTime } from '../utils/formatDateTime.js';
 import { WORKSPACE_CONFIG } from '../utils/workspacePreview.js';
 
@@ -43,6 +44,7 @@ export default function Dashboard({ role, actualRole = role, previewMode = false
   const [statsRefresh, setStatsRefresh] = useState(0);
 
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   const load = async () => {
     if (previewMode) {
@@ -91,7 +93,9 @@ export default function Dashboard({ role, actualRole = role, previewMode = false
     );
 
     } catch (e) {
-      setError(e.message || 'Unable to load drafts');
+      const message = e.message || 'Unable to load drafts';
+      setError(message);
+      toast.error(message, { action: { label: 'Retry', onClick: load } });
     } finally {
       setLoading(false);
     }
@@ -113,9 +117,16 @@ export default function Dashboard({ role, actualRole = role, previewMode = false
     setStatsError('');
     api.getDashboardStats()
       .then(result => { if (active) setStats(result); })
-      .catch(reason => { if (active) setStatsError(reason.message || 'Unable to load dashboard statistics.'); });
+      .catch(reason => {
+        if (!active) return;
+        const message = reason.message || 'Unable to load dashboard statistics.';
+        setStatsError(message);
+        toast.error(message, {
+          action: { label: 'Retry statistics', onClick: () => setStatsRefresh(value => value + 1) }
+        });
+      });
     return () => { active = false; };
-  }, [role, previewMode, statsRefresh]);
+  }, [role, previewMode, statsRefresh, toast]);
 
   useEffect(() => {
     setFilter(['Manager', 'Reviewer'].includes(role) ? 'Pending Approval' : 'All');
@@ -146,7 +157,12 @@ export default function Dashboard({ role, actualRole = role, previewMode = false
         setActivity(items.slice(0, 4));
       })
       .catch(reason => {
-        if (active) setActivityError(reason.message || 'Unable to load audit activity.');
+        if (!active) return;
+        const message = reason.message || 'Unable to load audit activity.';
+        setActivityError(message);
+        toast.error(message, {
+          action: { label: 'Retry', onClick: () => setActivityRefresh(value => value + 1) }
+        });
       })
       .finally(() => {
         if (active) setActivityLoading(false);
@@ -155,9 +171,14 @@ export default function Dashboard({ role, actualRole = role, previewMode = false
     return () => {
       active = false;
     };
-  }, [role, activityRefresh, previewMode]);
+  }, [role, activityRefresh, previewMode, toast]);
 
-  
+  useEffect(() => {
+    if (previewMode) {
+      toast.info(`Dashboard data is unavailable in this ${role} preview. The signed-in ${actualRole} account cannot access ${role}-scoped data.`);
+    }
+  }, [actualRole, previewMode, role, toast]);
+
 const visible = useMemo(() => {
   return drafts.filter((draft) => {
     // Reviewers should see only submitted content.
@@ -204,11 +225,6 @@ const visible = useMemo(() => {
 
   return (
     <div className="space-y-6">
-      {previewMode && (
-        <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Dashboard data is unavailable in this {role} preview. The signed-in {actualRole} account cannot access {role}-scoped data.
-        </p>
-      )}
       {showDrafts ? (
         <section className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
           <div>
@@ -259,28 +275,6 @@ const visible = useMemo(() => {
           </div>
         </div>
       </section>
-      )}
-
-      {error && (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700"
-        >
-          <span>{error}</span>
-          <button
-            type="button"
-            className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs"
-            onClick={load}
-          >
-            Retry
-          </button>
-        </div>
-      )}
-      {statsError && !previewMode && (
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-          <span>{statsError}</span>
-          <button type="button" className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs" onClick={() => setStatsRefresh(value => value + 1)}>Retry statistics</button>
-        </div>
       )}
 
       {!showDrafts && <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -506,18 +500,7 @@ const visible = useMemo(() => {
                   </div>
                 ))}
               </div>
-            ) : activityError ? (
-              <div role="alert" className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-sm text-rose-800">
-                <p>{activityError}</p>
-                <button
-                  type="button"
-                  className="mt-2 font-semibold underline decoration-rose-300 underline-offset-2"
-                  onClick={() => setActivityRefresh(value => value + 1)}
-                >
-                  Retry
-                </button>
-              </div>
-            ) : activity.length ? (
+            ) : activityError ? null : activity.length ? (
               <ol className="mt-4 divide-y divide-slate-100">
                 {activity.map((item, index) => (
                   <li key={item.id || index} className="flex items-start gap-3 py-3 first:pt-1 last:pb-0">

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight, CheckCircle2, ClipboardCheck, RotateCcw, Search } from 'lucide-react';
 import { api } from '../api/api.js';
 import StatusBadge from '../components/StatusBadge.jsx';
+import { useToast } from '../components/Toast.jsx';
 import { formatDateTime } from '../utils/formatDateTime.js';
 import { getReviewQueueActions, submitReviewQueueAction } from '../utils/reviewQueueWorkflow.js';
 import { canMutateInWorkspace } from '../utils/workspacePreview.js';
@@ -18,8 +19,8 @@ export default function Review({ role, actualRole = role, previewMode = false })
   const [refreshKey, setRefreshKey] = useState(0);
   const [reviewingId, setReviewingId] = useState('');
   const [comments, setComments] = useState({});
-  const [message, setMessage] = useState('');
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   useEffect(() => {
     let active = true;
@@ -27,16 +28,24 @@ export default function Review({ role, actualRole = role, previewMode = false })
       setDrafts([]);
       setLoading(false);
       setError('');
+      toast.info(`Review queue data is unavailable in this preview. The signed-in ${actualRole} account cannot access reviewer-scoped submissions.`);
       return () => { active = false; };
     }
     setLoading(true);
     setError('');
     api.getDrafts()
       .then(data => { if (active) setDrafts(data); })
-      .catch(reason => { if (active) setError(reason.message); })
+      .catch(reason => {
+        if (!active) return;
+        const message = reason.message || 'Unable to load submissions.';
+        setError(message);
+        toast.error(message, {
+          action: { label: 'Retry', onClick: () => setRefreshKey(key => key + 1) }
+        });
+      })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [refreshKey]);
+  }, [actualRole, previewMode, refreshKey, toast]);
 
   const rows = useMemo(() => drafts.filter(draft =>
     (filter === 'All' || draft.status === filter) &&
@@ -46,13 +55,12 @@ export default function Review({ role, actualRole = role, previewMode = false })
 
   async function handleReview(draft, action) {
     if (!canMutateInWorkspace(previewMode)) {
-      setError(`Review decisions are disabled in development preview. The authenticated account role is ${actualRole}.`);
+      toast.warning(`Review decisions are disabled in development preview. The authenticated account role is ${actualRole}.`);
       return;
     }
     try {
       setReviewingId(draft.id);
       setError('');
-      setMessage('');
       await submitReviewQueueAction(
         api,
         role,
@@ -61,12 +69,14 @@ export default function Review({ role, actualRole = role, previewMode = false })
         comments[draft.id] || ''
       );
       setComments(previous => ({ ...previous, [draft.id]: '' }));
-      setMessage(action === 'approve'
+      toast.success(action === 'approve'
         ? `"${draft.title}" approved successfully.`
         : `Changes requested for "${draft.title}".`);
       setRefreshKey(key => key + 1);
     } catch (reason) {
-      setError(reason.message || 'Unable to submit the review decision.');
+      const message = reason.message || 'Unable to submit the review decision.';
+      setError(message);
+      toast.error(message);
     } finally {
       setReviewingId('');
     }
@@ -78,15 +88,7 @@ export default function Review({ role, actualRole = role, previewMode = false })
         <p className="section-kicker">{role} workspace</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Review Queue</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Inspect submitted content, review its findings, and record an approval decision.</p>
-        {previewMode && <p role="status" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Review queue data is unavailable in this preview. The signed-in {actualRole} account cannot access reviewer-scoped submissions.</p>}
       </div>
-      {error && (
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-          <span>{error}</span>
-          <button type="button" className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs" onClick={() => setRefreshKey(key => key + 1)}>Retry</button>
-        </div>
-      )}
-      {message && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{message}</p>}
 
       <div className="grid gap-4 md:grid-cols-3">
         <div className="surface-card p-4">
@@ -113,7 +115,7 @@ export default function Review({ role, actualRole = role, previewMode = false })
                 : loading
                 ? 'Loading submissions…'
                 : error
-                  ? 'Submissions unavailable'
+                    ? ''
                   : `${rows.length} ${rows.length === 1 ? 'item' : 'items'} matching your filters`}
             </p>
           </div>
