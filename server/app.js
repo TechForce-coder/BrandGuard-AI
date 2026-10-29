@@ -1,3 +1,4 @@
+const scanRoutes = require('./routes/scanRoutes');
 const express = require("express");
 const cors = require("cors");
 const authenticate = require("./middleware/authMiddleware");
@@ -35,6 +36,7 @@ app.use("/api/findings", findingRoutes);
 app.use("/api/audit", auditRoutes);
 app.use("/api/rulebook", rulebookRoutes);
 app.use("/api/facts", factRoutes);
+app.use("/api", scanRoutes);
 app.get("/api/protected", authenticate, (req, res) => {
     res.json({
         success: true,
