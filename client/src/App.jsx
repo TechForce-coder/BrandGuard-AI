@@ -132,13 +132,17 @@ export default function App() {
     );
   }
 
-  if (location.pathname === '/login') {
+  // Allow both /login and /registration for unauthenticated visitors
+  const isAuthRoute = location.pathname === '/login' || location.pathname === '/registration';
+
+  if (isAuthRoute) {
     if (user) {
       return <Navigate to="/" replace />;
     }
 
     return (
       <Login
+        initialMode={location.pathname === '/registration' ? 'register' : 'login'}
         developmentPreviewEnabled={previewEnabled}
         sessionError={sessionError}
         onLogin={(profile, previewRole, accountCreated = false) => {

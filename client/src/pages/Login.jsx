@@ -1,19 +1,43 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Check, Eye, EyeOff, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react';
 import { api } from '../api/api.js';
 import { isWorkspacePreviewSelectorDisabled } from '../utils/workspacePreview.js';
 
-export default function Login({ onLogin, sessionError = '', developmentPreviewEnabled = false }) {
+export default function Login({ 
+  onLogin, 
+  sessionError = '', 
+  developmentPreviewEnabled = false,
+  initialMode = 'login' 
+}) {
+  const navigate = useNavigate();
+
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [organisationId, setOrganisationId] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [previewRole, setPreviewRole] = useState('Creator');
-  const [mode, setMode] = useState('login');
+  const [mode, setMode] = useState(initialMode);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // Sync mode if the route changes externally
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
+
+  const toggleMode = () => {
+    setError('');
+    if (mode === 'login') {
+      setMode('register');
+      navigate('/registration');
+    } else {
+      setMode('login');
+      navigate('/login');
+    }
+  };
 
   const submit = async event => {
     event.preventDefault();
@@ -60,8 +84,12 @@ export default function Login({ onLogin, sessionError = '', developmentPreviewEn
             <span className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[.12em] text-blue-800">
               <Sparkles size={13} /> Brand governance platform
             </span>
-            <h1 className="mt-6 text-[40px] font-semibold leading-[1.12] tracking-tight lg:text-5xl">Confident content.<br />Consistent brand.</h1>
-            <p className="mt-5 max-w-sm text-sm leading-7 text-slate-600">One thoughtful workflow to review, improve, and approve content before it reaches your audience.</p>
+            <h1 className="mt-6 text-[40px] font-semibold leading-[1.12] tracking-tight lg:text-5xl">
+              Confident content.<br />Consistent brand.
+            </h1>
+            <p className="mt-5 max-w-sm text-sm leading-7 text-slate-600">
+              One thoughtful workflow to review, improve, and approve content before it reaches your audience.
+            </p>
           </div>
           <div className="relative flex items-center gap-2 text-xs text-slate-500">
             <LockKeyhole size={14} /> Human decisions stay in control.
@@ -70,28 +98,67 @@ export default function Login({ onLogin, sessionError = '', developmentPreviewEn
 
         <form onSubmit={submit} className="flex flex-col justify-center p-7 sm:p-10 lg:p-12">
           <div className="mb-8 flex items-center gap-3 md:hidden">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-900 text-white"><ShieldCheck size={22} /></span>
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-900 text-white">
+              <ShieldCheck size={22} />
+            </span>
             <span className="text-xl font-semibold tracking-tight text-slate-950">BrandGuard</span>
           </div>
           <p className="text-xs font-semibold uppercase tracking-[.12em] text-blue-800">Secure workspace access</p>
-          <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-500">{mode === 'login' ? 'Sign in to continue to your brand governance workspace.' : 'Join your organisation and start with the Creator role.'}</p>
+          <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">
+            {mode === 'login' ? 'Welcome back' : 'Create your account'}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            {mode === 'login'
+              ? 'Sign in to continue to your brand governance workspace.'
+              : 'Join your organisation and start with the Creator role.'}
+          </p>
+
           {mode === 'register' && (
             <>
               <label className="mt-5 block text-sm font-semibold text-slate-800">
                 Full name
-                <input className="field mt-2" type="text" autoComplete="name" minLength={2} maxLength={120} required disabled={busy} value={name} onChange={event => setName(event.target.value)} />
+                <input
+                  className="field mt-2"
+                  type="text"
+                  autoComplete="name"
+                  minLength={2}
+                  maxLength={120}
+                  required
+                  disabled={busy}
+                  value={name}
+                  onChange={event => setName(event.target.value)}
+                />
               </label>
               <label className="mt-4 block text-sm font-semibold text-slate-800">
                 Organisation ID
-                <input className="field mt-2" type="text" name="organisationId" autoComplete="off" required disabled={busy} value={organisationId} onChange={event => setOrganisationId(event.target.value)} />
+                <input
+                  className="field mt-2"
+                  type="text"
+                  name="organisationId"
+                  autoComplete="off"
+                  required
+                  disabled={busy}
+                  value={organisationId}
+                  onChange={event => setOrganisationId(event.target.value)}
+                />
               </label>
             </>
           )}
+
           <label className={`${mode === 'register' ? 'mt-4' : 'mt-7'} block text-sm font-semibold text-slate-800`}>
             Work email
-            <input className="field mt-2" type="email" autoComplete="username" maxLength={254} required disabled={busy} value={email} onChange={event => setEmail(event.target.value)} />
+            <input
+              className="field mt-2"
+              type="email"
+              autoComplete="username"
+              maxLength={254}
+              required
+              disabled={busy}
+              value={email}
+              onChange={event => setEmail(event.target.value)}
+            />
           </label>
+
           <label className="mt-4 block text-sm font-semibold text-slate-800">
             Password
             <div className="relative mt-2">
@@ -117,6 +184,7 @@ export default function Login({ onLogin, sessionError = '', developmentPreviewEn
               </button>
             </div>
           </label>
+
           {mode === 'register' && (
             <label className="mt-4 block text-sm font-semibold text-slate-800">
               Confirm password
@@ -133,42 +201,47 @@ export default function Login({ onLogin, sessionError = '', developmentPreviewEn
               />
             </label>
           )}
+
           {mode === 'register' && (
             <label className="mt-4 block text-sm font-semibold text-slate-800">
               Select Account Role
-
               <select
                 className="field mt-2"
                 value="creator"
                 disabled={busy}
                 aria-label="Account role"
+                readOnly
               >
                 <option value="creator">Creator</option>
               </select>
-
               <span className="mt-1.5 block text-xs font-normal leading-5 text-slate-500">
                 New accounts start as Creator. An authorized administrator can assign other roles.
               </span>
             </label>
           )}
-          {(error || sessionError) && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-sm text-rose-800">{error || sessionError}</p>}
+
+          {(error || sessionError) && (
+            <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-sm text-rose-800">
+              {error || sessionError}
+            </p>
+          )}
+
           <button type="submit" disabled={busy} className="btn-primary mt-6 w-full justify-center py-3">
             {busy ? (mode === 'login' ? 'Signing in…' : 'Creating account…') : (mode === 'login' ? 'Sign in' : 'Create account')} <ArrowRight size={16} />
           </button>
+
           <p className="mt-4 text-center text-sm text-slate-600">
             {mode === 'login' ? 'New to BrandGuard?' : 'Already have an account?'}{' '}
             <button
               type="button"
               disabled={busy}
               className="font-semibold text-blue-800 hover:text-blue-950 disabled:opacity-50"
-              onClick={() => {
-                setError('');
-                setMode(value => value === 'login' ? 'register' : 'login');
-              }}
+              onClick={toggleMode}
             >
               {mode === 'login' ? 'Create account' : 'Sign in'}
             </button>
           </p>
+
           <div className="mt-5 flex items-start gap-2.5 rounded-xl bg-slate-50 p-3.5 text-xs leading-5 text-slate-500">
             <Check size={15} className="mt-0.5 shrink-0 text-blue-700" />
             <span>Use your organization credentials. Your account is managed by your organization.</span>
