@@ -174,6 +174,60 @@ const getCreatorActivity = async (req, res) => {
     }
 };
 
+const getDashboardStats = async (req, res) => {
+    try {
+        const role = String(req.user.role || "").trim().toLowerCase();
+
+        const query = {
+            organisationId: req.user.organisationId
+        };
+
+        if (role === "creator") {
+            query.author = req.user.userId;
+        }
+
+        const drafts = await Draft.find(query)
+            .select("status findings")
+            .lean();
+
+        const stats = {
+            totalContent: drafts.length,
+
+            pendingReviews: drafts.filter(
+                draft => draft.status === "Pending Approval"
+            ).length,
+
+            approvedContent: drafts.filter(
+                draft => draft.status === "Approved"
+            ).length,
+
+            needsChanges: drafts.filter(
+                draft => draft.status === "Needs Changes"
+            ).length,
+
+            flaggedContent: drafts.filter(draft =>
+                Array.isArray(draft.findings) &&
+                draft.findings.some(
+                    finding =>
+                        String(finding.status || "Open").toLowerCase() === "open"
+                )
+            ).length
+        };
+
+        return res.status(200).json({
+            success: true,
+            stats
+        });
+    } catch (error) {
+        console.error("Get dashboard stats error:", error.message);
+
+        return res.status(500).json({
+            success: false,
+            message: "Unable to fetch dashboard statistics"
+        });
+    }
+};
+
 
 // Get one draft by ID
 const getDraftById = async (req, res) => {
@@ -233,6 +287,7 @@ const getDraftById = async (req, res) => {
 };
 
 
+
 const updateDraft = async (req, res) => {
     try {
         const { title, content, channel, hasImage, altText } = req.body;
@@ -279,6 +334,14 @@ const updateDraft = async (req, res) => {
         const draft = await Draft.findOne({
             _id: req.params.id,
             organisationId: req.user.organisationId
+        });
+            console.log("Draft update check:", {
+            draftId: req.params.id,
+            userId: req.user.userId,
+            organisationId: req.user.organisationId,
+            found: !!draft,
+            status: draft?.status,
+            author: draft?.author
         });
 
         if (!draft) {
@@ -408,6 +471,7 @@ const scanDraft = async (req, res) => {
         }
 
         let result;
+
         try {
             const [facts, rules] = await Promise.all([
                 Fact.find({
@@ -418,18 +482,28 @@ const scanDraft = async (req, res) => {
                         { validUntil: { $exists: false } },
                         { validUntil: { $gt: new Date() } }
                     ]
-                }).select("title owner validUntil status").lean(),
+                })
+                    .select("title owner validUntil status")
+                    .lean(),
+
                 RulebookEntry.find({
                     organisationId: req.user.organisationId,
                     status: "Active"
-                }).select("title description status").lean()
+                })
+                    .select("title description status")
+                    .lean()
             ]);
-            result = await geminiService.scanContent(draft.content, draft.title, {
-                facts,
-                rules,
-                hasImage: draft.hasImage,
-                altText: draft.altText
-            });
+
+            result = await geminiService.scanContent(
+                draft.content,
+                draft.title,
+                {
+                    facts,
+                    rules,
+                    hasImage: draft.hasImage,
+                    altText: draft.altText
+                }
+            );
         } catch (error) {
             await recordAudit({
                 draft: draft._id,
@@ -437,41 +511,68 @@ const scanDraft = async (req, res) => {
                 organisationId: req.user.organisationId,
                 action: "Scan Failed"
             });
+
             throw error;
         }
 
-        // Safely handle the findings returned by Gemini
         const findings = Array.isArray(result?.findings)
             ? result.findings
             : [];
 
-        // Save scan results in MongoDB
         draft.findings = findings;
-        draft.findingsCount = findings.filter((finding) =>
-            !finding.status || finding.status === "Open"
+
+        draft.findingsCount = findings.filter(
+            (finding) =>
+                !finding.status || finding.status === "Open"
         ).length;
+
         draft.scannedAt = new Date();
-        draft.scanStatus = result?.scanStatus === "partial" ? "partial" : "complete";
-        draft.scanWarning = typeof result?.warning === "string" ? result.warning : "";
+
+        draft.scanStatus =
+            result?.scanStatus === "partial"
+                ? "partial"
+                : "complete";
+
+        draft.scanWarning =
+            typeof result?.warning === "string"
+                ? result.warning
+                : "";
 
         await draft.save();
+
         await recordAudit({
             draft: draft._id,
             user: req.user.userId,
             organisationId: req.user.organisationId,
-            action: draft.scanStatus === "partial" ? "Scan Partial" : "Scan Completed",
-            metadata: { findingsCount: draft.findingsCount, scanStatus: draft.scanStatus }
+            action:
+                draft.scanStatus === "partial"
+                    ? "Scan Partial"
+                    : "Scan Completed",
+            metadata: {
+                findingsCount: draft.findingsCount,
+                scanStatus: draft.scanStatus
+            }
         });
 
         return res.status(200).json({
             success: true,
-            message: draft.scanStatus === "partial"
-                ? "AI scan was incomplete. Only supported deterministic checks ran."
-                : "Content scan completed",
+            message:
+                draft.scanStatus === "partial"
+                    ? "AI scan was incomplete. Only supported deterministic checks ran."
+                    : "Content scan completed",
+
             draftId: draft._id,
             findings: draft.findings,
             findingsCount: draft.findingsCount,
             summary: result?.summary || "",
+
+            // Return the full suggested content only after a complete scan.
+            suggestedContent:
+                draft.scanStatus === "complete" &&
+                typeof result?.suggestedContent === "string"
+                    ? result.suggestedContent
+                    : "",
+
             scanStatus: draft.scanStatus,
             warning: draft.scanWarning,
             scannedAt: draft.scannedAt
@@ -488,7 +589,8 @@ const scanDraft = async (req, res) => {
 
         return res.status(500).json({
             success: false,
-            message: "Unable to scan content. Check the Gemini API configuration."
+            message:
+                "Unable to scan content. Check the Gemini API configuration."
         });
     }
 };
@@ -563,7 +665,7 @@ const submitDraft = async (req, res) => {
                     reviewComment: ""
                 }
             },
-            { new: true, runValidators: true }
+            { returnDocument: "after", runValidators: true }
         );
         if (!submittedDraft) {
             return res.status(409).json({
@@ -602,8 +704,21 @@ const submitDraft = async (req, res) => {
 
 
 
+
 const reviewDraft = async (req, res) => {
     try {
+        // Only managers can review drafts
+        const role = String(req.user?.role || "")
+            .trim()
+            .toLowerCase();
+
+        if (role !== "manager") {
+            return res.status(403).json({
+                success: false,
+                message: "Only managers can review drafts"
+            });
+        }
+
         const { action, comment = "" } = req.body;
 
         if (!["approve", "request-changes"].includes(action)) {
@@ -650,14 +765,21 @@ const reviewDraft = async (req, res) => {
         }
 
         const previousStatus = draft.status;
+
         const previousReview = {
             reviewedBy: draft.reviewedBy || null,
             reviewedAt: draft.reviewedAt || null,
             reviewComment: draft.reviewComment || ""
         };
-        const newStatus = action === "approve" ? "Approved" : "Needs Changes";
-        const reviewComment = typeof comment === "string" ? comment.trim() : "";
+
+        const newStatus =
+            action === "approve" ? "Approved" : "Needs Changes";
+
+        const reviewComment =
+            typeof comment === "string" ? comment.trim() : "";
+
         const reviewedAt = new Date();
+
         const reviewedDraft = await Draft.findOneAndUpdate(
             {
                 _id: draft._id,
@@ -673,8 +795,12 @@ const reviewDraft = async (req, res) => {
                     reviewComment
                 }
             },
-            { new: true, runValidators: true }
+            {
+                returnDocument: "after",
+                runValidators: true
+            }
         );
+
         if (!reviewedDraft) {
             return res.status(409).json({
                 success: false,
@@ -683,19 +809,24 @@ const reviewDraft = async (req, res) => {
         }
 
         // Save the review action in the audit log
-
         try {
             await recordAudit({
                 draft: reviewedDraft._id,
                 user: req.user.userId,
                 organisationId: req.user.organisationId,
-                action: action === "approve" ? "Approved" : "Changes Requested",
+                action:
+                    action === "approve"
+                        ? "Approved"
+                        : "Changes Requested",
                 comment: reviewComment,
                 previousStatus,
                 newStatus: reviewedDraft.status
             });
         } catch (auditError) {
-            console.error("Review audit persistence failed:", auditError.message);
+            console.error(
+                "Review audit persistence failed:",
+                auditError.message
+            );
 
             try {
                 const revertedDraft = await Draft.findOneAndUpdate(
@@ -713,27 +844,40 @@ const reviewDraft = async (req, res) => {
                             ...previousReview
                         }
                     },
-                    { new: true, runValidators: true }
+                    {
+                        returnDocument: "after",
+                        runValidators: true
+                    }
                 );
 
                 if (!revertedDraft) {
-                    console.error("Review status rollback did not match the updated draft");
+                    console.error(
+                        "Review status rollback did not match the updated draft"
+                    );
+
                     return res.status(500).json({
                         success: false,
-                        message: "Review history could not be saved. Reload the draft to verify its status before retrying."
+                        message:
+                            "Review history could not be saved. Reload the draft to verify its status before retrying."
                     });
                 }
             } catch (rollbackError) {
-                console.error("Review status rollback failed:", rollbackError.message);
+                console.error(
+                    "Review status rollback failed:",
+                    rollbackError.message
+                );
+
                 return res.status(500).json({
                     success: false,
-                    message: "Review history could not be saved. Reload the draft to verify its status before retrying."
+                    message:
+                        "Review history could not be saved. Reload the draft to verify its status before retrying."
                 });
             }
 
             return res.status(503).json({
                 success: false,
-                message: "The review was not saved because its audit history could not be recorded. Please retry."
+                message:
+                    "The review was not saved because its audit history could not be recorded. Please retry."
             });
         }
 
@@ -745,7 +889,6 @@ const reviewDraft = async (req, res) => {
                     : "Changes requested successfully",
             draft: reviewedDraft
         });
-
     } catch (error) {
         console.error("Review draft error:", error.message);
 
@@ -757,6 +900,7 @@ const reviewDraft = async (req, res) => {
         });
     }
 };
+
 
 const addDraftComment = async (req, res) => {
     try {
@@ -821,6 +965,7 @@ module.exports = {
     createDraft,
     getDrafts,
     getCreatorActivity,
+    getDashboardStats,
     getDraftById,
     updateDraft,
     scanDraft,

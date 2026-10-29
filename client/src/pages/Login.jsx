@@ -30,11 +30,15 @@ export default function Login({ onLogin, sessionError = '', developmentPreviewEn
           return;
         }
         const result = await api.register({ name, email, password, confirmPassword, organisationId });
-        onLogin(result.user, previewRole, true);
+        console.log('Registered user:', result.user);
+        console.log('Registered role:', result.user?.role);
+        onLogin(result.user, result.user.role, true);
         return;
       }
       const result = await api.login(email, password);
-      onLogin(result.user, previewRole, false);
+      console.log('Logged-in user:', result.user);
+      console.log('Logged-in role:', result.user?.role);
+      onLogin(result.user, result.user.role, false);
     } catch (reason) {
       setError(reason.message);
     } finally {
@@ -129,26 +133,24 @@ export default function Login({ onLogin, sessionError = '', developmentPreviewEn
               />
             </label>
           )}
-          <label className="mt-4 block text-sm font-semibold text-slate-800">
-            Workspace preview after sign in
-            <select
-              className="field mt-2"
-              value={previewRole}
-              onChange={event => setPreviewRole(event.target.value)}
-              disabled={isWorkspacePreviewSelectorDisabled(busy, developmentPreviewEnabled)}
-              aria-label="Workspace preview after sign in"
-            >
-              {['Creator', 'Reviewer', 'Manager', 'Admin'].map(role => (
-                <option key={role} value={role}>{role}</option>
-              ))}
-            </select>
-            <span className="mt-1.5 block text-xs font-normal leading-5 text-slate-500">
-              Preview only. Your account role and permissions are set by your organization.
-              {developmentPreviewEnabled
-                ? ' Development workspace preview is enabled for layout inspection only.'
-                : ' Layout preview is disabled unless explicitly enabled in development.'}
-            </span>
-          </label>
+          {mode === 'register' && (
+            <label className="mt-4 block text-sm font-semibold text-slate-800">
+              Select Account Role
+
+              <select
+                className="field mt-2"
+                value="creator"
+                disabled={busy}
+                aria-label="Account role"
+              >
+                <option value="creator">Creator</option>
+              </select>
+
+              <span className="mt-1.5 block text-xs font-normal leading-5 text-slate-500">
+                New accounts start as Creator. An authorized administrator can assign other roles.
+              </span>
+            </label>
+          )}
           {(error || sessionError) && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-sm text-rose-800">{error || sessionError}</p>}
           <button type="submit" disabled={busy} className="btn-primary mt-6 w-full justify-center py-3">
             {busy ? (mode === 'login' ? 'Signing in…' : 'Creating account…') : (mode === 'login' ? 'Sign in' : 'Create account')} <ArrowRight size={16} />

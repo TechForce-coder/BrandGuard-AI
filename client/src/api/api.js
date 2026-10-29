@@ -101,6 +101,40 @@ export const api = {
     const result = await request('/auth/me');
     return result?.user || null;
   },
+  
+  async getUsers() {
+    const result = await request('/auth/users');
+
+    if (!Array.isArray(result?.users)) {
+      throw new Error('Users response was not in the expected format');
+    }
+
+    return result.users;
+  },
+  async createOrganisation(name) {
+  if (typeof name !== 'string' || !name.trim()) {
+    throw new Error('Organisation name is required.');
+  }
+
+  return request('/organisations', {
+    method: 'POST',
+    body: JSON.stringify({ name: name.trim() })
+  });
+},
+
+  async updateUserRole(userId, role) {
+    const allowedRoles = ['creator', 'reviewer', 'manager', 'admin'];
+
+    if (!allowedRoles.includes(String(role).toLowerCase())) {
+      throw new Error('Invalid role');
+    }
+
+    return request(`/auth/users/${encodeURIComponent(userId)}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role: String(role).toLowerCase() })
+    });
+  },
+
 
   hasSession() {
     return Boolean(localStorage.getItem('brandguard-token'));

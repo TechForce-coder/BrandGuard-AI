@@ -5,6 +5,7 @@ const User = require("../models/User");
 const Organisation = require("../models/Organisation");
 
 // Register a new user
+
 const register = async (req, res) => {
     try {
         const { name, email, password, organisationId } = req.body;
@@ -13,11 +14,18 @@ const register = async (req, res) => {
             typeof name !== "string" || !name.trim() ||
             typeof email !== "string" || !email.trim() ||
             typeof password !== "string" || !password ||
-            typeof organisationId !== "string" || !organisationId
+            typeof organisationId !== "string" || !organisationId.trim()
         ) {
             return res.status(400).json({
                 success: false,
                 message: "Please provide all required fields"
+            });
+        }
+
+        if (name.trim().length < 2 || name.trim().length > 120) {
+            return res.status(400).json({
+                success: false,
+                message: "Name must be between 2 and 120 characters"
             });
         }
 
@@ -28,22 +36,23 @@ const register = async (req, res) => {
             });
         }
 
-        if (password.length < 8) {
+        if (password.length < 8 || password.length > 72) {
             return res.status(400).json({
                 success: false,
-                message: "Password must be at least 8 characters"
+                message: "Password must be between 8 and 72 characters"
             });
         }
 
-        // Validate organisation ID
-        if (!mongoose.isValidObjectId(organisationId)) {
+        if (!mongoose.isValidObjectId(organisationId.trim())) {
             return res.status(400).json({
                 success: false,
                 message: "Invalid organisation ID"
             });
         }
 
-        const organisation = await Organisation.findById(organisationId);
+        const organisation = await Organisation.findById(
+            organisationId.trim()
+        );
 
         if (!organisation) {
             return res.status(404).json({
@@ -52,8 +61,8 @@ const register = async (req, res) => {
             });
         }
 
-        // Check whether user already exists
         const normalizedEmail = email.trim().toLowerCase();
+
         const existingUser = await User.findOne({
             email: normalizedEmail
         });
@@ -68,23 +77,45 @@ const register = async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 12);
 
         const user = await User.create({
-            name,
+            name: name.trim(),
             email: normalizedEmail,
             password: hashedPassword,
             role: "creator",
-            organisationId
+            organisationId: organisation._id
         });
+
+        if (!process.env.JWT_SECRET) {
+            console.error("JWT_SECRET is not configured");
+            return res.status(500).json({
+                success: false,
+                message: "Server authentication is not configured"
+            });
+        }
+
+        const token = jwt.sign(
+            {
+                userId: user._id.toString(),
+                organisationId: user.organisationId.toString(),
+                role: user.role,
+                tokenVersion: user.tokenVersion || 0
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: "1h" }
+        );
 
         return res.status(201).json({
             success: true,
             message: "User registered successfully",
+            token,
             user: {
                 id: user._id,
                 name: user.name,
                 email: user.email,
-                role: user.role
+                role: user.role,
+                organisationId: user.organisationId
             }
         });
+
     } catch (error) {
         console.error("Registration error:", error.message);
 
@@ -101,6 +132,7 @@ const register = async (req, res) => {
         });
     }
 };
+
 
 
 const login = async (req, res) => {

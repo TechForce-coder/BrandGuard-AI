@@ -36,11 +36,13 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
   const [scanned, setScanned] = useState(false);
   const [scanStatus, setScanStatus] = useState('not-scanned');
   const [scanWarning, setScanWarning] = useState('');
+  const [suggestedContent, setSuggestedContent] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
   const authenticatedRole = String(actualRole || '').toLowerCase();
-  const canReview = ['reviewer', 'manager', 'admin'].includes(String(workspaceRole || '').toLowerCase());
+  const canReview = String(actualRole || '').trim().toLowerCase() === 'manager';
+
   const readOnly = previewMode || authenticatedRole !== 'creator' || (
     Boolean(draftId) && !['Draft', 'Needs Changes'].includes(status)
   );
@@ -78,6 +80,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setScanned(editorState.scanned);
       setScanStatus(editorState.scanStatus);
       setScanWarning(editorState.scanWarning);
+      setSuggestedContent('');
     } catch (err) {
       setError(err.message || 'Failed to load draft.');
     } finally {
@@ -90,8 +93,10 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setError('Saving is disabled in development workspace preview.');
       return null;
     }
+
     const { navigateAfter = true, content: contentOverride } = options;
     const contentToSave = contentOverride ?? text;
+
     if (!title.trim() || !contentToSave.trim()) {
       setError('Enter a title and draft content first.');
       return null;
@@ -110,6 +115,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         hasImage,
         altText,
       });
+
       const editorState = getDraftEditorState(saved, {
         id: draftId,
         title,
@@ -122,9 +128,11 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         scanned,
         scanStatus,
         scanWarning,
-        reviewHistory
+        reviewHistory,
       });
+
       const savedId = editorState.id;
+
       if (!savedId) {
         throw new Error('Draft saved, but its ID was not returned.');
       }
@@ -136,6 +144,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         channel: editorState.channel,
         content: editorState.content,
       });
+
       setTitle(editorState.title);
       setChannel(editorState.channel);
       setText(editorState.content);
@@ -149,9 +158,11 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setScanWarning(editorState.scanWarning);
 
       setMessage('Draft saved.');
+
       if (navigateAfter && !id) {
         navigate(`/drafts/${savedId}`, { replace: true });
       }
+
       return { ...saved, id: savedId, ...editorState };
     } catch (err) {
       setError(err.message || 'Failed to save draft.');
@@ -166,36 +177,89 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setError('Applying suggestions is disabled in development workspace preview.');
       return;
     }
+
     const quote = finding.quote;
+
     if (typeof quote !== 'string' || !quote || typeof finding.suggestion !== 'string') {
       setError('This finding does not have an applicable text suggestion.');
       return;
     }
 
     const firstIndex = text.indexOf(quote);
+
     if (firstIndex < 0 || text.indexOf(quote, firstIndex + quote.length) >= 0) {
       setError('The quoted text is missing or appears more than once. Edit it manually to avoid changing the wrong passage.');
       return;
     }
 
     const updatedText = `${text.slice(0, firstIndex)}${finding.suggestion}${text.slice(firstIndex + quote.length)}`;
+
     const saved = await handleSave({ content: updatedText });
+
     if (saved) {
+      setScanned(false);
+      setScanStatus('not-scanned');
+      setScanWarning('');
+      setSuggestedContent('');
       setMessage('Suggested change saved. Run a fresh scan before submitting.');
     }
   }
+
+
+async function handleApplyFullSuggestion() {
+  if (!canMutateInWorkspace(previewMode)) {
+    setError(
+      'Applying suggestions is disabled in development workspace preview.'
+    );
+    return;
+  }
+
+  if (
+    typeof suggestedContent !== 'string' ||
+    !suggestedContent.trim()
+  ) {
+    setError('No complete suggested content is available.');
+    return;
+  }
+
+  try {
+    setError('');
+    setMessage('');
+
+    const saved = await handleSave({
+      content: suggestedContent,
+      navigateAfter: false,
+    });
+
+    if (!saved) return;
+
+    setScanned(false);
+    setScanStatus('not-scanned');
+    setScanWarning('');
+    setSuggestedContent('');
+
+    setMessage(
+      'Suggested content saved. Run a fresh scan when ready.'
+    );
+  } catch (err) {
+    setError(err.message || 'Failed to apply suggested content.');
+  }
+}
 
   async function handleScan() {
     if (!canMutateInWorkspace(previewMode)) {
       setError('Scanning is disabled in development workspace preview.');
       return;
     }
+
     try {
       setScanning(true);
       setError('');
       setMessage('');
+      setSuggestedContent('');
 
       const saved = await handleSave({ navigateAfter: false });
+
       if (!saved) return;
 
       const response = await api.scanDraft(saved.id, text);
@@ -211,12 +275,24 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         setStatus(data.status);
       }
 
+      setSuggestedContent(
+        nextScanStatus === 'complete' &&
+        typeof data.suggestedContent === 'string' &&
+        data.suggestedContent.trim()
+          ? data.suggestedContent
+          : ''
+      );
+
       setScanStatus(nextScanStatus);
       setScanWarning(data.warning || data.scanWarning || '');
       setScanned(nextScanStatus === 'complete');
-      setMessage(nextScanStatus === 'partial'
-        ? 'Scan incomplete. Resolve the provider issue and run a complete scan before submitting.'
-        : 'Draft scan completed.');
+
+      setMessage(
+        nextScanStatus === 'partial'
+          ? 'Scan incomplete. Resolve the provider issue and run a complete scan before submitting.'
+          : 'Draft scan completed.'
+      );
+
       if (!id) {
         navigate(`/drafts/${saved.id}`, { replace: true });
       }
@@ -232,6 +308,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setError('Finding decisions are disabled in development workspace preview.');
       return;
     }
+
     try {
       if (decision === 'Disputed' && !reason.trim()) {
         setError('Please enter a reason to dispute this finding.');
@@ -242,20 +319,17 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setMessage('');
 
       const findingIndex = findings.findIndex(item => item === finding);
+
       if (findingIndex < 0) {
         throw new Error('Finding not found.');
       }
 
-      await api.updateFinding(
-        draftId,
-        String(findingIndex),
-        decision,
-        reason
-      );
+      await api.updateFinding(draftId, String(findingIndex), decision, reason);
 
       setFindings(previous => previous.map((item, index) =>
         index === findingIndex ? { ...item, status: decision, reason } : item
       ));
+
       setMessage(`Finding ${decision.toLowerCase()} successfully.`);
     } catch (err) {
       setError(err.message || 'Failed to update finding decision.');
@@ -267,6 +341,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setError('Submission is disabled in development workspace preview.');
       return;
     }
+
     if (!scanned) {
       setError('Run a scan on the latest saved draft before submitting.');
       return;
@@ -304,12 +379,15 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setError('Comments are disabled in development workspace preview.');
       return;
     }
+
     try {
       setSaving(true);
       setError('');
       setMessage('');
+
       await submitReviewComment(api, draftId, comment);
       await loadDraft();
+
       setMessage('Review comment recorded.');
     } catch (err) {
       setError(err.message || 'Failed to record review comment.');
@@ -323,6 +401,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setError('Review decisions are disabled in development workspace preview.');
       return;
     }
+
     if (decision === 'Needs Changes' && !comments.trim()) {
       setError('Add a comment explaining the requested changes.');
       return;
@@ -341,9 +420,12 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
 
       setStatus(decision);
 
-      setMessage(decision === 'Approved'
-        ? 'Draft approved successfully.'
-        : 'Changes requested successfully.');
+      setMessage(
+        decision === 'Approved'
+          ? 'Draft approved successfully.'
+          : 'Changes requested successfully.'
+      );
+
       if (id) await loadDraft();
     } catch (err) {
       setError(err.message || 'Failed to submit review.');
@@ -397,13 +479,19 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
               Edit your content and check it against your organisation's
               brand guidelines.
             </p>
-            {previewMode && <p className="mt-2 text-sm font-medium text-amber-800">Development preview is read-only. Protected content actions are disabled.</p>}
+            {previewMode && (
+              <p className="mt-2 text-sm font-medium text-amber-800">
+                Development preview is read-only. Protected content actions are disabled.
+              </p>
+            )}
           </div>
 
           {scanStatus === 'partial' && (
             <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
               <p className="font-semibold">Scan incomplete</p>
-              <p className="mt-1">{scanWarning || 'Only supported deterministic checks ran. A complete AI scan is required before submission.'}</p>
+              <p className="mt-1">
+                {scanWarning || 'Only supported deterministic checks ran. A complete AI scan is required before submission.'}
+              </p>
             </div>
           )}
 
@@ -423,25 +511,21 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         )}
 
         <div className="space-y-2">
-          <label
-            htmlFor="draft-title"
-            className="block text-sm font-medium text-slate-700"
-          >
+          <label htmlFor="draft-title" className="block text-sm font-medium text-slate-700">
             Content title{' '}
-            <span className="text-rose-600" aria-hidden="true">
-              *
-            </span>
+            <span className="text-rose-600" aria-hidden="true">*</span>
           </label>
 
           <input
             id="draft-title"
             type="text"
             value={title}
-            onChange={(event) => {
+            onChange={event => {
               setTitle(event.target.value);
               setScanned(false);
               setScanStatus('not-scanned');
               setScanWarning('');
+              setSuggestedContent('');
             }}
             disabled={readOnly}
             required={!readOnly}
@@ -451,24 +535,20 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         </div>
 
         <div className="space-y-2">
-          <label
-            htmlFor="draft-channel"
-            className="block text-sm font-medium text-slate-700"
-          >
+          <label htmlFor="draft-channel" className="block text-sm font-medium text-slate-700">
             Channel{' '}
-            <span className="text-rose-600" aria-hidden="true">
-              *
-            </span>
+            <span className="text-rose-600" aria-hidden="true">*</span>
           </label>
 
           <select
             id="draft-channel"
             value={channel}
-            onChange={(event) => {
+            onChange={event => {
               setChannel(event.target.value);
               setScanned(false);
               setScanStatus('not-scanned');
               setScanWarning('');
+              setSuggestedContent('');
             }}
             disabled={readOnly}
             required={!readOnly}
@@ -485,23 +565,19 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         </div>
 
         <div className="space-y-2">
-          <label
-            htmlFor="draft-content"
-            className="block text-sm font-medium text-slate-700"
-          >
+          <label htmlFor="draft-content" className="block text-sm font-medium text-slate-700">
             Draft content{' '}
-            <span className="text-rose-600" aria-hidden="true">
-              *
-            </span>
+            <span className="text-rose-600" aria-hidden="true">*</span>
           </label>
 
           <Editor
             value={text}
-            onChange={(value) => {
+            onChange={value => {
               setText(value);
               setScanned(false);
               setScanStatus('not-scanned');
               setScanWarning('');
+              setSuggestedContent('');
             }}
             readOnly={readOnly}
           />
@@ -521,11 +597,13 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
                 setScanned(false);
                 setScanStatus('not-scanned');
                 setScanWarning('');
+                setSuggestedContent('');
               }}
               disabled={readOnly}
             />
             This content includes an image
           </label>
+
           {hasImage && (
             <label htmlFor="draft-alt-text" className="block text-sm font-medium text-slate-700">
               Image alt-text
@@ -539,12 +617,15 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
                   setScanned(false);
                   setScanStatus('not-scanned');
                   setScanWarning('');
+                  setSuggestedContent('');
                 }}
                 disabled={readOnly}
                 className="input mt-1.5 w-full"
                 placeholder="Describe the meaningful visual content"
               />
-              <span className="mt-1 block text-xs font-normal text-slate-500">The scan checks that alt-text is descriptive and 5–125 characters long.</span>
+              <span className="mt-1 block text-xs font-normal text-slate-500">
+                The scan checks that alt-text is descriptive and 5–125 characters long.
+              </span>
             </label>
           )}
         </div>
@@ -602,21 +683,33 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         <section className="surface-card space-y-4 p-5 sm:p-7">
           <div>
             <h2 className="text-xl font-semibold text-slate-900">Review history</h2>
-            <p className="mt-1 text-sm text-slate-500">Persisted workflow decisions and comments.</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Persisted workflow decisions and comments.
+            </p>
           </div>
+
           <ol className="space-y-3">
             {reviewHistory.map((item, index) => (
-              <li key={item._id || item.id || `${item.action}-${item.createdAt}-${index}`} className="rounded-lg border border-slate-200 p-4">
+              <li
+                key={item._id || item.id || `${item.action}-${item.createdAt}-${index}`}
+                className="rounded-lg border border-slate-200 p-4"
+              >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-semibold text-slate-800">{item.action}</p>
                   <time className="text-xs text-slate-500" dateTime={item.createdAt || undefined}>
                     {item.createdAt ? new Date(item.createdAt).toLocaleString() : ''}
                   </time>
                 </div>
+
                 <p className="mt-1 text-xs text-slate-500">
                   {item.user?.name || item.user?.email || 'Workspace reviewer'}
                 </p>
-                {item.comment && <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{item.comment}</p>}
+
+                {item.comment && (
+                  <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                    {item.comment}
+                  </p>
+                )}
               </li>
             ))}
           </ol>
@@ -625,13 +718,34 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
 
       <section className="surface-card space-y-4 p-5 sm:p-7">
         <div>
-          <h2 className="text-xl font-semibold text-slate-900">
-            Scan findings
-          </h2>
+          <h2 className="text-xl font-semibold text-slate-900">Scan findings</h2>
           <p className="mt-1 text-sm text-slate-500">
             Review the issues identified in your draft.
           </p>
         </div>
+
+        {suggestedContent && !readOnly && (
+          <div className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+            <div>
+              <h3 className="font-semibold text-indigo-950">
+                Gemini improved content is ready
+              </h3>
+              <p className="mt-1 text-sm text-indigo-800">
+                Apply the complete suggestion to update only the draft content. Your title will remain unchanged.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className="btn-primary inline-flex items-center gap-2"
+              disabled={saving || scanning || submitting}
+              onClick={handleApplyFullSuggestion}
+            >
+              {saving && <LoaderCircle className="animate-spin" size={16} />}
+              Apply Full Suggestion
+            </button>
+          </div>
+        )}
 
         {findings.length > 0 ? (
           <FindingsPanel
@@ -642,10 +756,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
           />
         ) : (
           <div className="rounded-xl bg-slate-50/80 p-6 text-center">
-            <CheckCircle2
-              className="mx-auto mb-2 text-slate-400"
-              size={24}
-            />
+            <CheckCircle2 className="mx-auto mb-2 text-slate-400" size={24} />
             <p className="text-sm text-slate-600">
               {scanned
                 ? 'No issues were identified in the latest scan. Review the content before publishing.'
@@ -655,21 +766,18 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         )}
       </section>
 
-      {canReview &&
-        status === 'Pending Approval' && (
-          <section className="surface-card space-y-4 p-5 sm:p-7">
-            <h2 className="text-xl font-semibold text-slate-900">
-              Review draft
-            </h2>
+      {canReview && status === 'Pending Approval' && (
+        <section className="surface-card space-y-4 p-5 sm:p-7">
+          <h2 className="text-xl font-semibold text-slate-900">Review draft</h2>
 
-            <ReviewActions
-              onReview={handleReview}
-              onComment={handleComment}
-              loading={saving}
-              previewMode={previewMode}
-            />
-          </section>
-        )}
+          <ReviewActions
+            onReview={handleReview}
+            onComment={handleComment}
+            loading={saving}
+            previewMode={previewMode}
+          />
+        </section>
+      )}
     </div>
   );
 }
@@ -681,7 +789,7 @@ function ReviewActions({ onReview, onComment, loading, previewMode = false }) {
     <div className="space-y-4">
       <textarea
         value={comments}
-        onChange={(event) => setComments(event.target.value)}
+        onChange={event => setComments(event.target.value)}
         disabled={previewMode}
         className="input min-h-24 w-full"
         placeholder="Add review comments (optional)"
@@ -696,6 +804,7 @@ function ReviewActions({ onReview, onComment, loading, previewMode = false }) {
         >
           Add comment
         </button>
+
         <button
           type="button"
           onClick={() => onReview('Approved', comments)}

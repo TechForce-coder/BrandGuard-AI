@@ -1,4 +1,4 @@
-const REVIEW_ROLES = new Set(['manager', 'reviewer', 'admin']);
+const REVIEW_ROLES = new Set(['manager']);
 
 export function getReviewQueueActions(role, draft) {
   if (

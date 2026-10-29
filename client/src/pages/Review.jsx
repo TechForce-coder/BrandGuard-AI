@@ -149,7 +149,7 @@ export default function Review({ role, actualRole = role, previewMode = false })
                   <td className="min-w-64 px-5 py-4">
                     <div className="flex flex-wrap gap-2">
                       <button type="button" className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs" onClick={() => navigate(`/drafts/${draft.id}`)}>Open draft <ArrowRight size={14} /></button>
-                      {getReviewQueueActions(role, draft).map(({ action, label }) => (
+                      {String(actualRole || role || '').toLowerCase() === 'manager' &&getReviewQueueActions(actualRole || role, draft).map(({ action, label }) => (
                         <button
                           key={action}
                           type="button"
@@ -164,7 +164,7 @@ export default function Review({ role, actualRole = role, previewMode = false })
                         </button>
                       ))}
                     </div>
-                    {draft.status === 'Pending Approval' && getReviewQueueActions(role, draft).length > 0 && (
+                    {String(actualRole || role || '').toLowerCase() === 'manager' &&draft.status === 'Pending Approval' &&getReviewQueueActions(actualRole || role, draft).length > 0 && (
                       <label className="mt-2 block">
                         <span className="sr-only">Review comment for {draft.title}</span>
                         <textarea

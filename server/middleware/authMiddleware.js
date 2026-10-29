@@ -57,7 +57,10 @@ const authenticate = async (req, res, next) => {
 };
 
 const authorizeRoles = (...roles) => (req, res, next) => {
-    if (!req.user || !roles.includes(String(req.user.role || "").toLowerCase())) {
+    const userRole = String(req.user?.role || "").toLowerCase();
+    const allowedRoles = roles.map(role => String(role).toLowerCase());
+
+    if (!req.user || !allowedRoles.includes(userRole)) {
         return res.status(403).json({
             success: false,
             message: "You do not have permission to perform this action"
