@@ -75,12 +75,15 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
   const [suggestedContent, setSuggestedContent] = useState('');
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
-  const trimmedImageUrl = imageUrl.trim();
+
+  // Safe fallback to prevent runtime crashes if imageUrl is null or not a string
+  const trimmedImageUrl = typeof imageUrl === 'string' ? imageUrl.trim() : '';
   const imageUrlError = trimmedImageUrl ? getImageUrlError(trimmedImageUrl) : '';
   const hasValidImage = Boolean(imageFile || (trimmedImageUrl && !imageUrlError));
 
   const authenticatedRole = String(actualRole || '').toLowerCase();
-  const canReview = String(actualRole || '').trim().toLowerCase() === 'manager';
+  // Strictly manager and admin can perform reviews
+  const canReview = ['manager', 'admin'].includes(authenticatedRole);
 
   const readOnly = previewMode || authenticatedRole !== 'creator' || (
     Boolean(draftId) && !['Draft', 'Needs Changes'].includes(status)
@@ -143,7 +146,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setOriginalContent(data?.originalContent || editorState.content || '');
       setHasImage(editorState.hasImage);
       setAltText(editorState.altText);
-      setImageUrl(data?.imageUrl || editorState?.imageUrl || '');
+      setImageUrl(typeof data?.imageUrl === 'string' ? data.imageUrl : (editorState?.imageUrl || ''));
       setFindings(editorState.findings);
       setReviewHistory(editorState.reviewHistory);
       setStatus(editorState.status);
@@ -192,7 +195,6 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
     setImageInputError('');
     setImageFile(file);
 
-    // Upload to Google Drive and auto-populate the URL input
     try {
       setImageScanning(true);
       toast.info('Uploading image to Drive…');
@@ -273,25 +275,26 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
     }
   }
 
+  async function handleDeleteDraft() {
+    if (!canDeleteDraft || deleting) return;
+
+    setDeleting(true);
+    try {
+      await api.deleteDraft(draftId);
+      toast.success('Draft deleted');
+      navigate('/drafts');
+    } catch (reason) {
+      toast.error(reason.message || 'Unable to delete draft.');
+    } finally {
+      setDeleting(false);
+      setDeleteConfirmOpen(false);
+    }
+  }
+
   async function handleSave(options = {}) {
     if (!canMutateInWorkspace(previewMode)) {
       toast.warning('Saving is disabled in development workspace preview.');
       return null;
-    }
-
-    async function handleDeleteDraft() {
-      if (!canDeleteDraft || deleting) return;
-
-      setDeleting(true);
-      try {
-        await api.deleteDraft(draftId);
-        toast.success('Draft deleted');
-        navigate('/drafts');
-      } catch (reason) {
-        toast.error(reason.message || 'Unable to delete draft.');
-      } finally {
-        setDeleting(false);
-      }
     }
 
     const { navigateAfter = true, content: contentOverride } = options;
@@ -1004,6 +1007,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
               )}
               Submit for approval
             </button>
+
             {canDeleteDraft && (
               <button
                 type="button"
