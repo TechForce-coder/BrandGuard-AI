@@ -17,7 +17,7 @@ const allowedChannels = new Set([
 // 1. Create a new draft with permanent originalContent baseline
 const createDraft = async (req, res) => {
     try {
-        const { title, content, channel, hasImage, altText } = req.body;
+        const { title, content, channel, hasImage, altText, imageUrl, imageAnalysis } = req.body;
 
         if (typeof title !== "string" || !title.trim()) {
             return res.status(400).json({
@@ -56,6 +56,18 @@ const createDraft = async (req, res) => {
                 message: "Alt-text must be 300 characters or fewer"
             });
         }
+        if (imageUrl !== undefined && typeof imageUrl !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Image URL must be a string"
+            });
+        }
+        if (imageAnalysis !== undefined && typeof imageAnalysis !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Image analysis must be a string"
+            });
+        }
 
         const draftContent = content || "";
 
@@ -73,6 +85,8 @@ const createDraft = async (req, res) => {
             channel: channel || "Website",
             hasImage: hasImage || false,
             altText: altText || "",
+            imageUrl: typeof imageUrl === "string" ? imageUrl.trim() : "",
+            imageAnalysis: typeof imageAnalysis === "string" ? imageAnalysis : "",
             author: req.user.userId,
             organisationId: req.user.organisationId
         });
@@ -99,11 +113,11 @@ const createDraft = async (req, res) => {
     }
 };
 
-// 2. Get all drafts
+// 2. Get all drafts (reviewer role rejected; only creator, manager, admin)
 const getDrafts = async (req, res) => {
     try {
         const role = String(req.user.role || "").toLowerCase();
-        if (!["creator", "reviewer", "manager", "admin"].includes(role)) {
+        if (!["creator", "manager", "admin"].includes(role)) {
             return res.status(403).json({
                 success: false,
                 message: "You do not have permission to view drafts"
@@ -136,6 +150,8 @@ const getDrafts = async (req, res) => {
 
             return {
                 ...draft,
+                imageUrl: draft.imageUrl || "",
+                imageAnalysis: draft.imageAnalysis || "",
                 originalContent: draft.originalContent || draft.content,
                 findings,
                 findingsCount: openFindingsCount
@@ -239,7 +255,7 @@ const getDashboardStats = async (req, res) => {
     }
 };
 
-// 5. Get one draft by ID with diff baseline
+// 5. Get one draft by ID with diff baseline (reviewer role rejected)
 const getDraftById = async (req, res) => {
     try {
         const draft = await Draft.findOne({
@@ -258,7 +274,7 @@ const getDraftById = async (req, res) => {
         const isCreator = role === "creator";
         const isAuthor = String(draft.author?._id || draft.author) === String(req.user.userId);
         const isOwnedCreatorDraft = isCreator && isAuthor;
-        const isSubmittedForReview = ["reviewer", "manager", "admin"].includes(role) &&
+        const isSubmittedForReview = ["manager", "admin"].includes(role) &&
             ["Pending Approval", "Needs Changes", "Approved"].includes(draft.status);
 
         if (!isOwnedCreatorDraft && !isSubmittedForReview) {
@@ -288,6 +304,8 @@ const getDraftById = async (req, res) => {
             success: true,
             draft: {
                 ...draftObj,
+                imageUrl: draftObj.imageUrl || "",
+                imageAnalysis: draftObj.imageAnalysis || "",
                 reviewHistory
             }
         });
@@ -306,7 +324,7 @@ const getDraftById = async (req, res) => {
 // 6. Update draft and record revision history
 const updateDraft = async (req, res) => {
     try {
-        const { title, content, channel, hasImage, altText } = req.body;
+        const { title, content, channel, hasImage, altText, imageUrl, imageAnalysis } = req.body;
 
         if (typeof title !== "string" || !title.trim()) {
             return res.status(400).json({
@@ -343,6 +361,18 @@ const updateDraft = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: "Alt-text must be 300 characters or fewer"
+            });
+        }
+        if (imageUrl !== undefined && typeof imageUrl !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Image URL must be a string"
+            });
+        }
+        if (imageAnalysis !== undefined && typeof imageAnalysis !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Image analysis must be a string"
             });
         }
 
@@ -386,13 +416,16 @@ const updateDraft = async (req, res) => {
         const newChannel = channel || "Website";
         const newHasImage = hasImage ?? draft.hasImage;
         const newAltText = altText === undefined ? draft.altText : altText.trim();
+        const newImageUrl = imageUrl === undefined ? (draft.imageUrl || "") : imageUrl.trim();
+        const newImageAnalysis = imageAnalysis === undefined ? (draft.imageAnalysis || "") : imageAnalysis;
 
         const contentChanged =
             draft.title !== newTitle ||
             draft.content !== newContent ||
             draft.channel !== newChannel ||
             draft.hasImage !== newHasImage ||
-            draft.altText !== newAltText;
+            draft.altText !== newAltText ||
+            (draft.imageUrl || "") !== newImageUrl;
 
         const previousStatus = draft.status;
 
@@ -418,6 +451,8 @@ const updateDraft = async (req, res) => {
         draft.channel = newChannel;
         draft.hasImage = newHasImage;
         draft.altText = newAltText;
+        draft.imageUrl = newImageUrl;
+        draft.imageAnalysis = newImageAnalysis;
 
         // Reset scan and approval data when content changes
         if (contentChanged) {
@@ -530,7 +565,8 @@ const scanDraft = async (req, res) => {
                     facts,
                     rules,
                     hasImage: draft.hasImage,
-                    altText: draft.altText
+                    altText: draft.altText,
+                    imageUrl: draft.imageUrl || ""
                 }
             );
         } catch (error) {
@@ -729,14 +765,14 @@ const submitDraft = async (req, res) => {
     }
 };
 
-// 9. Review draft (Managers only)
+// 9. Review draft (Managers and Admins)
 const reviewDraft = async (req, res) => {
     try {
         const role = String(req.user?.role || "")
             .trim()
             .toLowerCase();
 
-        if (role !== "manager") {
+        if (!["manager", "admin"].includes(role)) {
             return res.status(403).json({
                 success: false,
                 message: "Only managers can review drafts"

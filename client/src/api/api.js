@@ -53,6 +53,7 @@ function normalizeDraft(draft) {
     // Revision history list
     revisions: Array.isArray(draft.revisions) ? draft.revisions : [],
     imageUrl: typeof draft.imageUrl === 'string' ? draft.imageUrl : '',
+    imageAnalysis: typeof draft.imageAnalysis === 'string' ? draft.imageAnalysis : '',
     hasImage: Boolean(draft.hasImage),
     altText: draft.altText || '',
     author: typeof draft.author === 'object' && draft.author !== null
@@ -205,7 +206,8 @@ export const api = {
       channel: draft.channel || 'Website',
       hasImage: draft.hasImage === true,
       altText: draft.altText || '',
-      imageUrl: typeof draft.imageUrl === 'string' ? draft.imageUrl.trim() : ''
+      imageUrl: typeof draft.imageUrl === 'string' ? draft.imageUrl.trim() : '',
+      imageAnalysis: typeof draft.imageAnalysis === 'string' ? draft.imageAnalysis : ''
     };
     const result = draft.id
       ? await request(`/drafts/${encodeURIComponent(draft.id)}`, {

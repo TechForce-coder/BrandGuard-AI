@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
 import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
+  FileText,
   GitCompare,
   LoaderCircle,
   ImagePlus,
@@ -29,14 +31,22 @@ const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avi
 const IMAGE_EXTENSIONS = /\.(jpe?g|png|webp|avif)$/i;
 
 function getImageUrlError(value) {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  const trimmed = value.trim();
+
+  // Support internal proxy paths and data URIs without throwing URL errors
+  if (trimmed.startsWith('/') || trimmed.startsWith('data:image/')) {
+    return '';
+  }
+
   try {
-    const url = new URL(value);
-    if (url.protocol !== 'https:' || !url.hostname || url.username || url.password) {
-      return 'Enter a valid HTTPS image URL.';
+    const url = new URL(trimmed);
+    if (!['https:', 'http:'].includes(url.protocol) || !url.hostname || url.username || url.password) {
+      return 'Enter a valid image URL.';
     }
     return '';
   } catch {
-    return 'Enter a valid HTTPS image URL.';
+    return 'Enter a valid image URL.';
   }
 }
 
@@ -60,6 +70,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
   const [imagePreviewError, setImagePreviewError] = useState(false);
   const [imageInputError, setImageInputError] = useState('');
   const [imageScanning, setImageScanning] = useState(false);
+  const [imageScanResult, setImageScanResult] = useState('');
   const [findings, setFindings] = useState([]);
   const [reviewHistory, setReviewHistory] = useState([]);
   const [status, setStatus] = useState('Draft');
@@ -76,7 +87,6 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
 
-  // Safe fallback to prevent runtime crashes if imageUrl is null or not a string
   const trimmedImageUrl = typeof imageUrl === 'string' ? imageUrl.trim() : '';
   const imageUrlError = trimmedImageUrl ? getImageUrlError(trimmedImageUrl) : '';
   const hasValidImage = Boolean(imageFile || (trimmedImageUrl && !imageUrlError));
@@ -154,6 +164,10 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setScanStatus(editorState.scanStatus);
       setScanWarning(editorState.scanWarning);
       setSuggestedContent('');
+
+      if (data?.imageAnalysis || data?.imageScanResult) {
+        setImageScanResult(data.imageAnalysis || data.imageScanResult);
+      }
     } catch (err) {
       const message = err.message || 'Failed to load draft.';
       setError(message);
@@ -169,6 +183,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
     setImageFilePreview('');
     setImagePreviewError(false);
     setImageInputError('');
+    setImageScanResult('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
@@ -200,12 +215,14 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       toast.info('Uploading image to Drive…');
 
       const response = await api.uploadAndScanFile(file);
-      if (response?.success === true && Array.isArray(response.scans)) {
+      if (response?.success === true) {
         const uploadedUrl =
           response?.url ||
           response?.driveUrl ||
           response?.scans?.[0]?.driveUrl ||
           response?.scans?.[0]?.webViewLink ||
+          response?.results?.[0]?.driveUrl ||
+          response?.results?.[0]?.url ||
           '';
 
         if (uploadedUrl) {
@@ -213,13 +230,18 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
           toast.success('Image uploaded to Drive. URL has been auto-populated.');
         }
 
-        const analysis = response.scans
+        const scanList = Array.isArray(response.scans)
+          ? response.scans
+          : (Array.isArray(response.results) ? response.results : []);
+
+        const analysis = scanList
           .map(scan => scan?.geminiAnalysis)
           .filter(value => typeof value === 'string' && value.trim())
           .join('\n\n');
 
         if (analysis) {
-          toast.info(`Image scan result:\n${analysis}`);
+          setImageScanResult(analysis);
+          toast.success('Image scan completed successfully.');
         }
       }
     } catch (uploadErr) {
@@ -243,7 +265,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       toast.info('Uploading and scanning image…');
 
       const response = await api.uploadAndScanFile(imageFile);
-      if (response?.success !== true || !Array.isArray(response.scans)) {
+      if (response?.success !== true) {
         throw new Error(response?.error || 'The image scan did not return a valid result.');
       }
 
@@ -252,13 +274,19 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         response?.driveUrl ||
         response?.scans?.[0]?.driveUrl ||
         response?.scans?.[0]?.webViewLink ||
+        response?.results?.[0]?.driveUrl ||
+        response?.results?.[0]?.url ||
         '';
 
       if (uploadedUrl) {
         setImageUrl(uploadedUrl);
       }
 
-      const analysis = response.scans
+      const scanList = Array.isArray(response.scans)
+        ? response.scans
+        : (Array.isArray(response.results) ? response.results : []);
+
+      const analysis = scanList
         .map(scan => scan?.geminiAnalysis)
         .filter(value => typeof value === 'string' && value.trim())
         .join('\n\n');
@@ -267,7 +295,8 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         throw new Error('The image scan completed without returning an analysis.');
       }
 
-      toast.info(`Image scan result:\n${analysis}`);
+      setImageScanResult(analysis);
+      toast.success('Image scan completed successfully.');
     } catch (err) {
       toast.error(err.message || 'Failed to scan image.');
     } finally {
@@ -317,6 +346,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         hasImage,
         altText,
         imageUrl: trimmedImageUrl,
+        imageAnalysis: imageScanResult,
       });
 
       const editorState = getDraftEditorState(saved, {
@@ -356,6 +386,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setOriginalContent(saved.originalContent || originalContent || editorState.content);
       setHasImage(editorState.hasImage);
       setAltText(editorState.altText);
+      setImageUrl(editorState.imageUrl || trimmedImageUrl);
       setStatus(editorState.status);
       setFindings(editorState.findings);
       setReviewHistory(editorState.reviewHistory);
@@ -832,9 +863,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
                   aria-label="Image preview"
                 >
                   {imageFilePreview || (trimmedImageUrl && !imageUrlError) ? (
-                    imagePreviewError ? (
-                      null
-                    ) : (
+                    imagePreviewError ? null : (
                       <img
                         src={imageFilePreview || trimmedImageUrl}
                         alt="Selected image preview"
@@ -967,6 +996,48 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
             </div>
           )}
         </section>
+
+        {/* Dedicated Image Compliance Report Box */}
+        {hasImage && imageScanResult && (
+          <section className="surface-card space-y-4 p-5 sm:p-7 border-l-4 border-l-blue-600 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <FileText className="text-blue-600" size={20} />
+                <h2 className="text-lg font-bold text-slate-900">
+                  Image Compliance Report
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setImageScanResult('')}
+                className="text-xs font-medium text-slate-400 hover:text-rose-600 transition"
+              >
+                Clear report
+              </button>
+            </div>
+
+            <div className="max-w-none text-slate-700 leading-relaxed overflow-x-auto">
+              <ReactMarkdown
+                components={{
+                  h1: ({ node, ...props }) => <h1 className="text-xl font-bold text-slate-900 mt-4 mb-2" {...props} />,
+                  h2: ({ node, ...props }) => <h2 className="text-lg font-bold text-slate-900 mt-4 mb-2" {...props} />,
+                  h3: ({ node, ...props }) => <h3 className="text-base font-semibold text-slate-900 mt-3 mb-1.5" {...props} />,
+                  p: ({ node, ...props }) => <p className="text-sm text-slate-700 mb-2 leading-relaxed" {...props} />,
+                  ul: ({ node, ...props }) => <ul className="list-disc list-inside space-y-1 mb-3 text-sm text-slate-700" {...props} />,
+                  ol: ({ node, ...props }) => <ol className="list-decimal list-inside space-y-1 mb-3 text-sm text-slate-700" {...props} />,
+                  li: ({ node, ...props }) => <li className="text-sm text-slate-700 pl-1" {...props} />,
+                  strong: ({ node, ...props }) => <strong className="font-semibold text-slate-900" {...props} />,
+                  blockquote: ({ node, ...props }) => (
+                    <blockquote className="border-l-4 border-slate-300 pl-3 italic text-slate-600 my-2 text-sm" {...props} />
+                  ),
+                }}
+              >
+                {imageScanResult}
+              </ReactMarkdown>
+            </div>
+          </section>
+        )}
 
         {!readOnly && (
           <div className="flex flex-wrap gap-3">

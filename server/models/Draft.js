@@ -79,6 +79,11 @@ const draftSchema = new mongoose.Schema(
             trim: true,
             default: ""
         },
+        // Persisted Gemini compliance report for uploaded media
+        imageAnalysis: {
+            type: String,
+            default: ""
+        },
         status: {
             type: String,
             enum: [
