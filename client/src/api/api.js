@@ -52,6 +52,9 @@ function normalizeDraft(draft) {
     originalContent: draft.originalContent || content,
     // Revision history list
     revisions: Array.isArray(draft.revisions) ? draft.revisions : [],
+    imageUrl: typeof draft.imageUrl === 'string' ? draft.imageUrl : '',
+    hasImage: Boolean(draft.hasImage),
+    altText: draft.altText || '',
     author: typeof draft.author === 'object' && draft.author !== null
       ? draft.author.name || draft.author.email || 'Unknown'
       : draft.author || 'You',
@@ -97,7 +100,8 @@ export const api = {
     localStorage.setItem('brandguard-token', result.token);
     try {
       const user = await api.me();
-      if (!user || !['creator', 'reviewer', 'manager', 'admin'].includes(String(user.role || '').toLowerCase())) {
+      // Strictly creator, manager, and admin (reviewer removed)
+      if (!user || !['creator', 'manager', 'admin'].includes(String(user.role || '').toLowerCase())) {
         throw new Error('The server returned an invalid user profile.');
       }
       return { user };
@@ -134,7 +138,8 @@ export const api = {
   },
 
   async updateUserRole(userId, role) {
-    const allowedRoles = ['creator', 'reviewer', 'manager', 'admin'];
+    // Strictly creator, manager, and admin (reviewer removed)
+    const allowedRoles = ['creator', 'manager', 'admin'];
 
     if (!allowedRoles.includes(String(role).toLowerCase())) {
       throw new Error('Invalid role');
@@ -199,7 +204,8 @@ export const api = {
       content: draft.content ?? draft.text ?? '',
       channel: draft.channel || 'Website',
       hasImage: draft.hasImage === true,
-      altText: draft.altText || ''
+      altText: draft.altText || '',
+      imageUrl: typeof draft.imageUrl === 'string' ? draft.imageUrl.trim() : ''
     };
     const result = draft.id
       ? await request(`/drafts/${encodeURIComponent(draft.id)}`, {
@@ -217,7 +223,7 @@ export const api = {
   async scanDraft(id, text) {
     return request(`/drafts/${encodeURIComponent(id)}/scan`, {
       method: 'POST',
-      body: JSON.stringify({ text })
+      body: JSON.stringify({ content: text, text })
     });
   },
 

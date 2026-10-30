@@ -13,6 +13,7 @@ export function getDraftEditorState(draft, fallback = {}) {
     content: record.content ?? fallback.content ?? '',
     hasImage: record.hasImage ?? fallback.hasImage ?? false,
     altText: record.altText ?? fallback.altText ?? '',
+    imageUrl: record.imageUrl ?? fallback.imageUrl ?? '',
     findings: Array.isArray(record.findings)
       ? record.findings
       : fallback.findings || [],
