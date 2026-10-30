@@ -1017,6 +1017,49 @@ const addDraftComment = async (req, res) => {
         });
     }
 };
+// Delete draft
+const deleteDraft = async (req, res) => {
+    try {
+        const draft = await Draft.findOne({
+            _id: req.params.id,
+            organisationId: req.user.organisationId,
+            author: req.user.userId
+        });
+
+        if (!draft) {
+            return res.status(404).json({
+                success: false,
+                message: "Draft not found"
+            });
+        }
+
+        if (!["Draft", "Needs Changes"].includes(draft.status)) {
+            return res.status(409).json({
+                success: false,
+                message: "Only drafts or content returned for changes can be deleted"
+            });
+        }
+
+        await draft.deleteOne();
+
+        return res.status(200).json({
+            success: true,
+            message: "Draft deleted successfully"
+        });
+
+    } catch (error) {
+        console.error("Delete draft error:", error.message);
+
+        return res.status(
+            error.name === "CastError" ? 400 : 500
+        ).json({
+            success: false,
+            message: error.name === "CastError"
+                ? "Invalid draft ID"
+                : "Unable to delete draft"
+        });
+    }
+};
 
 module.exports = {
     createDraft,
@@ -1028,5 +1071,6 @@ module.exports = {
     scanDraft,
     submitDraft,
     reviewDraft,
+    deleteDraft,
     addDraftComment
 };

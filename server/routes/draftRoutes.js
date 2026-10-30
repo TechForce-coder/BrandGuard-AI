@@ -14,7 +14,8 @@ const {
     scanDraft,
     submitDraft,
     reviewDraft,
-    addDraftComment
+    addDraftComment,
+    deleteDraft
 } = require("../controllers/draftController");
 
 // Create draft
@@ -109,6 +110,13 @@ router.post(
         req.body.action = "request-changes";
         reviewDraft(req, res, next);
     }
+);
+// Delete draft
+router.delete(
+    "/:id",
+    authenticate,
+    authorizeRoles("creator"),
+    deleteDraft
 );
 
 module.exports = router;

@@ -25,6 +25,7 @@
   },
   "homepage": "https://github.com/TechForce-coder/BrandGuard-AI#readme",
   "dependencies": {
-    "multer": "^2.5.0"
+    "multer": "^2.5.0",
+    "react-markdown": "^10.1.0"
   }
 }
