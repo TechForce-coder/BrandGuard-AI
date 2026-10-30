@@ -136,6 +136,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setOriginalContent(data?.originalContent || editorState.content || '');
       setHasImage(editorState.hasImage);
       setAltText(editorState.altText);
+      setImageUrl(data?.imageUrl || editorState?.imageUrl || '');
       setFindings(editorState.findings);
       setReviewHistory(editorState.reviewHistory);
       setStatus(editorState.status);
@@ -155,12 +156,13 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
   function clearImageSelection() {
     setImageFile(null);
     setImageUrl('');
+    setImageFilePreview('');
     setImagePreviewError(false);
     setImageInputError('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
-  function handleImageFileChange(event) {
+  async function handleImageFileChange(event) {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -182,6 +184,41 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
 
     setImageInputError('');
     setImageFile(file);
+
+    // Upload to Google Drive and auto-populate the URL input
+    try {
+      setImageScanning(true);
+      toast.info('Uploading image to Drive…');
+
+      const response = await api.uploadAndScanFile(file);
+      if (response?.success === true && Array.isArray(response.scans)) {
+        const uploadedUrl =
+          response?.url ||
+          response?.driveUrl ||
+          response?.scans?.[0]?.driveUrl ||
+          response?.scans?.[0]?.webViewLink ||
+          '';
+
+        if (uploadedUrl) {
+          setImageUrl(uploadedUrl);
+          toast.success('Image uploaded to Drive. URL has been auto-populated.');
+        }
+
+        const analysis = response.scans
+          .map(scan => scan?.geminiAnalysis)
+          .filter(value => typeof value === 'string' && value.trim())
+          .join('\n\n');
+
+        if (analysis) {
+          toast.info(`Image scan result:\n${analysis}`);
+        }
+      }
+    } catch (uploadErr) {
+      console.warn('Initial upload warning:', uploadErr);
+      toast.warning('Image loaded locally. Click "Scan Image" to re-attempt Drive upload.');
+    } finally {
+      setImageScanning(false);
+    }
   }
 
   async function handleScanImage() {
@@ -199,6 +236,17 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       const response = await api.uploadAndScanFile(imageFile);
       if (response?.success !== true || !Array.isArray(response.scans)) {
         throw new Error(response?.error || 'The image scan did not return a valid result.');
+      }
+
+      const uploadedUrl =
+        response?.url ||
+        response?.driveUrl ||
+        response?.scans?.[0]?.driveUrl ||
+        response?.scans?.[0]?.webViewLink ||
+        '';
+
+      if (uploadedUrl) {
+        setImageUrl(uploadedUrl);
       }
 
       const analysis = response.scans
@@ -243,6 +291,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         content: contentToSave,
         hasImage,
         altText,
+        imageUrl: trimmedImageUrl,
       });
 
       const editorState = getDraftEditorState(saved, {
@@ -252,6 +301,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         content: contentToSave,
         hasImage,
         altText,
+        imageUrl: trimmedImageUrl,
         findings,
         status,
         scanned,
@@ -272,6 +322,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         title: editorState.title,
         channel: editorState.channel,
         content: editorState.content,
+        imageUrl: trimmedImageUrl,
       });
 
       setTitle(editorState.title);

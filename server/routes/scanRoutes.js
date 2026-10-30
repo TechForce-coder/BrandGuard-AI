@@ -9,11 +9,8 @@ const router = express.Router();
 
 // Fallback hierarchy of active multimodal models
 const DEFAULT_IMAGE_MODELS = [
-  process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
-  process.env.GEMINI_FALLBACK_MODEL || "gemini-3.8-flash",
-  "gemini-3.6-flash",
-  "gemini-3.1-flash-lite",
-  "gemini-2.5-flash",
+  process.env.GEMINI_MODEL || "gemini-2.5-flash",
+  process.env.GEMINI_FALLBACK_MODEL || "gemini-1.5-flash",
   "gemini-2.5-flash-lite",
   "gemini-2.5-pro"
 ];
@@ -66,12 +63,10 @@ async function analyzeImageWithFallback(prompt, imagePart) {
         const status = Number(err.status || err.code || err.error?.code);
         console.warn(`[BrandGuard Media] Model ${modelName} failed: ${err.message} (status: ${status || 'N/A'})`);
 
-        // If rate limited or service is busy, pause briefly before retrying
         const isTransient = status === 429 || status === 503 || status >= 500;
         if (isTransient && attempt === 0) {
-          await sleep(1500);
+          await sleep(2500);
         } else {
-          // If 404 or other permanent failure, jump directly to the next fallback model
           break;
         }
       }
@@ -94,7 +89,6 @@ router.post('/upload-and-scan', upload.array('media', 5), async (req, res) => {
     const results = [];
     const prompt = "Analyze this image for brand compliance. Point out any logos, text, or elements that look out of place, inappropriate, or low resolution.";
 
-    // Loop through each uploaded file
     for (const file of req.files) {
       const { originalname, mimetype, buffer } = file;
 
@@ -103,6 +97,8 @@ router.post('/upload-and-scan', upload.array('media', 5), async (req, res) => {
       bufferStream.end(buffer);
 
       let driveLink = '';
+      let directImageUrl = '';
+
       try {
         const driveResponse = await drive.files.create({
           requestBody: {
@@ -115,13 +111,30 @@ router.post('/upload-and-scan', upload.array('media', 5), async (req, res) => {
           },
           fields: 'id, webViewLink',
         });
+
+        const fileId = driveResponse.data.id;
         driveLink = driveResponse.data.webViewLink;
+
+        // Make file publicly readable so it can display as an image tag
+        try {
+          await drive.permissions.create({
+            fileId: fileId,
+            requestBody: {
+              role: 'reader',
+              type: 'anyone',
+            },
+          });
+        } catch (permErr) {
+          console.warn(`Drive permission grant warning:`, permErr.message);
+        }
+
+        // Direct embeddable image URL
+        directImageUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
       } catch (driveErr) {
         console.warn(`Drive upload failed for ${originalname}:`, driveErr.message);
-        // Continue scanning even if Drive upload fails
       }
 
-      // --- B. Scan with Gemini with Fallback Cascade ---
+      // --- B. Scan with Gemini ---
       const base64Data = buffer.toString('base64');
       const imagePart = {
         inlineData: {
@@ -135,38 +148,42 @@ router.post('/upload-and-scan', upload.array('media', 5), async (req, res) => {
       // --- C. Save record to MongoDB ---
       const newScan = new Scan({
         fileName: originalname,
-        driveUrl: driveLink,
+        driveUrl: directImageUrl || driveLink,
         geminiAnalysis: analysis,
         modelUsed
       });
       await newScan.save();
-      console.log(`Scan saved to MongoDB: ${originalname} (using ${modelUsed})`);
 
-      // Collect processed result
       results.push({
         fileName: originalname,
-        driveUrl: driveLink,
+        driveUrl: directImageUrl || driveLink,
+        webViewLink: driveLink,
         geminiAnalysis: analysis,
         modelUsed
       });
     }
 
-    // --- D. Return all processed scans ---
-    res.status(200).json({
+    // --- D. Return processed scans ---
+    // Expose url and driveUrl on root for single-image upload compatibility
+    const primaryUrl = results[0]?.driveUrl || '';
+
+    return res.status(200).json({
       success: true,
+      url: primaryUrl,
+      driveUrl: primaryUrl,
       scans: results
     });
 
   } catch (error) {
     console.error('Pipeline Error:', error.message);
-    res.status(500).json({ error: error.message || 'Failed to process file(s)' });
+    return res.status(500).json({ error: error.message || 'Failed to process file(s)' });
   }
 });
 
 // --- E. Fetch Scan History ---
 router.get('/history', async (req, res) => {
   try {
-    const scans = await Scan.find().sort({ createdAt: -1 }); // Newest first
+    const scans = await Scan.find().sort({ createdAt: -1 });
     res.status(200).json(scans);
   } catch (error) {
     console.error('History Fetch Error:', error.message);
