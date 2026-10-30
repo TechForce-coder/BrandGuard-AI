@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Activity, BookOpen, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList,
+  Activity, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList,
   FileText, LayoutDashboard, LogOut, Menu, Plus, Settings, ShieldCheck, X
 } from 'lucide-react';
 import { api } from '../api/api.js';
@@ -28,12 +28,57 @@ const roleDescriptions = {
 export default function Layout({ role, actualRole, previewMode = false, user, setUser, onLogoutError, workspaceNotice = '', children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [activeIndicatorTop, setActiveIndicatorTop] = useState(0);
+  const sidebarNavigationRef = useRef(null);
+  const accountMenuRef = useRef(null);
+  const accountTriggerRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
   const links = (WORKSPACE_CONFIG[role] || WORKSPACE_CONFIG.Creator).navigation.map(item => ({
     ...item,
     icon: navigationIcons[item.to]
   }));
+
+  useEffect(() => {
+    const updateScroll = () => setScrolled(window.scrollY > 8);
+    updateScroll();
+    window.addEventListener('scroll', updateScroll, { passive: true });
+    return () => window.removeEventListener('scroll', updateScroll);
+  }, []);
+
+  useLayoutEffect(() => {
+    const updateIndicator = () => {
+      const container = sidebarNavigationRef.current;
+      const activeLink = container?.querySelector('.sidebar-link--active');
+      if (!container || !activeLink) return;
+      const containerTop = container.getBoundingClientRect().top;
+      const linkTop = activeLink.getBoundingClientRect().top;
+      setActiveIndicatorTop(linkTop - containerTop + container.scrollTop);
+    };
+    updateIndicator();
+    window.addEventListener('resize', updateIndicator);
+    return () => window.removeEventListener('resize', updateIndicator);
+  }, [location.pathname, collapsed, role]);
+
+  useEffect(() => {
+    if (!accountOpen) return undefined;
+    const closeOnOutsideClick = event => {
+      if (!accountMenuRef.current?.contains(event.target)) setAccountOpen(false);
+    };
+    const closeOnEscape = event => {
+      if (event.key !== 'Escape') return;
+      setAccountOpen(false);
+      accountTriggerRef.current?.focus();
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [accountOpen]);
   const logout = async () => {
     if (!user) return;
     try {
@@ -95,7 +140,10 @@ export default function Layout({ role, actualRole, previewMode = false, user, se
         </div>
 
         <div className={`sidebar-section-label ${collapsed ? 'lg:hidden' : ''}`}>Workspace</div>
-        <div className="sidebar-navigation">{renderNav()}</div>
+        <div className="sidebar-navigation" ref={sidebarNavigationRef}>
+          <span className="sidebar-active-indicator" style={{ transform: `translateY(${activeIndicatorTop}px)` }} aria-hidden="true" />
+          {renderNav()}
+        </div>
 
         <div className="sidebar-bottom">
           {!collapsed && (
@@ -123,7 +171,7 @@ export default function Layout({ role, actualRole, previewMode = false, user, se
       {mobileOpen && <button type="button" className="sidebar-backdrop lg:hidden" aria-label="Close navigation menu" onClick={() => setMobileOpen(false)} />}
 
       <div className="app-main">
-        <header className="app-topbar">
+        <header className={`app-topbar ${scrolled ? 'app-topbar--scrolled' : ''}`}>
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
@@ -156,12 +204,32 @@ export default function Layout({ role, actualRole, previewMode = false, user, se
               <Activity size={13} aria-hidden="true" /> Workspace
             </span>
 
-            <div className="hidden min-w-0 items-center gap-2 border-l border-slate-200 pl-3 md:flex">
-              <span className="avatar-mark">{(user?.name || user?.email || 'U').slice(0, 1)}</span>
-              <span className="min-w-0">
-                <span className="block max-w-32 truncate text-xs font-semibold text-slate-800">{user?.name || 'Workspace user'}</span>
-                <span className="block text-[11px] text-slate-500">Account: {actualRole}</span>
-              </span>
+            <div className="account-menu hidden md:block" ref={accountMenuRef}>
+              <button
+                type="button"
+                ref={accountTriggerRef}
+                className="account-menu__trigger"
+                aria-haspopup="menu"
+                aria-expanded={accountOpen}
+                onClick={() => setAccountOpen(value => !value)}
+              >
+                <span className="avatar-mark">{(user?.name || user?.email || 'U').slice(0, 1)}</span>
+                <span className="min-w-0 text-left">
+                  <span className="block max-w-32 truncate text-xs font-semibold text-slate-800">{user?.name || 'Workspace user'}</span>
+                  <span className="block text-[11px] text-slate-500">Account: {actualRole}</span>
+                </span>
+                <ChevronDown size={15} className={`text-slate-400 transition-transform ${accountOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+              </button>
+              {accountOpen && (
+                <div className="account-menu__panel" role="menu" aria-label="Account options">
+                  <p className="truncate text-sm font-semibold text-slate-900">{user?.name || 'Workspace user'}</p>
+                  <p className="truncate text-xs text-slate-500">{user?.email}</p>
+                  <p className="mt-1 text-xs text-slate-500">Signed in as {actualRole}</p>
+                  <button type="button" className="account-menu__signout" role="menuitem" onClick={logout}>
+                    <LogOut size={15} aria-hidden="true" /> Sign out
+                  </button>
+                </div>
+              )}
             </div>
             <button type="button" onClick={logout} className="icon-button sm:hidden" aria-label="Sign out" title="Sign out">
               <LogOut size={17} />
@@ -169,7 +237,7 @@ export default function Layout({ role, actualRole, previewMode = false, user, se
           </div>
         </header>
 
-        <main className="page-enter page-shell">
+        <main className="page-shell">
           {previewMode && (
             <div role="status" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
               <strong>DEVELOPMENT PREVIEW — {role} workspace UI</strong>
@@ -181,11 +249,13 @@ export default function Layout({ role, actualRole, previewMode = false, user, se
               {workspaceNotice}
             </p>
           )}
-          {children || <Outlet />}
+          <div key={location.pathname} className="route-transition">
+            {children || <Outlet />}
+          </div>
         </main>
         <footer className="app-footer">
-          <span>BrandGuard AI · Human-controlled brand governance</span>
-          <span>Secure workspace</span>
+          <span className="app-footer__brand"><ShieldCheck size={15} aria-hidden="true" /> BrandGuard AI <span>·</span> Human-controlled brand governance</span>
+          <span className="app-footer__secure"><span aria-hidden="true" /> Secure workspace</span>
         </footer>
       </div>
     </div>

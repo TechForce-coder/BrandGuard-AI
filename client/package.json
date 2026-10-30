@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "check:css": "node ./scripts/check-css.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "gh-pages -d dist"

@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -12,20 +12,24 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Trash2,
   Workflow
 } from 'lucide-react';
 
 import { api } from '../api/api.js';
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import StatCard from '../components/StatCard.jsx';
+import EmptyState from '../components/EmptyState.jsx';
+import Skeleton from '../components/Skeleton.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { formatDateTime } from '../utils/formatDateTime.js';
 import { WORKSPACE_CONFIG } from '../utils/workspacePreview.js';
 
 const roleActions = {
-  Creator: { label: 'Create content', to: '/drafts/new', icon: Plus },
-  Reviewer: { label: 'Open review queue', to: '/review', icon: ClipboardCheck },
-  Manager: { label: 'Open approval workflow', to: '/review', icon: ArrowRight },
+  Creator: { label: 'New draft', to: '/drafts/new', icon: Plus },
+  Reviewer: { label: 'Review queue', to: '/review', icon: ClipboardCheck },
+  Manager: { label: 'Review queue', to: '/review', icon: ArrowRight },
   Admin: { label: 'Administration', to: '/settings', icon: Settings }
 };
 
@@ -42,13 +46,17 @@ function formatContentUpdated(value) {
   }).format(date);
 }
 
-function ApprovalGauge({ label, count, total, startColor, endColor, textColor, index, unavailable }) {
+function ApprovalGauge({ label, count, total, startColor, endColor, textColor, index, unavailable, loading }) {
   const [reducedMotion, setReducedMotion] = useState(() => (
     typeof window !== 'undefined' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
   ));
-  const [progress, setProgress] = useState(0);
-  const [animatedCount, setAnimatedCount] = useState(count);
+  const [progress, setProgress] = useState(() => (
+    reducedMotion && total > 0 ? Math.min(count / total, 1) : 0
+  ));
+  const [animatedCount, setAnimatedCount] = useState(() => (
+    reducedMotion || unavailable ? count : 0
+  ));
   const gradientId = `approval-gauge-${useId().replace(/:/g, '')}`;
   const ratio = total > 0 ? Math.min(count / total, 1) : 0;
   const percent = total > 0 ? Math.round((count / total) * 100) : 0;
@@ -103,9 +111,11 @@ function ApprovalGauge({ label, count, total, startColor, endColor, textColor, i
     <div
       className="approval-gauge"
       role="img"
-      aria-label={unavailable
-        ? `${label}: data unavailable`
-        : `${label}: ${count} of ${total} items, ${percent} percent`}
+      aria-label={loading
+        ? `${label}: loading`
+        : unavailable
+          ? `${label}: data unavailable`
+          : `${label}: ${count} of ${total} items, ${percent} percent`}
       tabIndex={0}
       style={{ '--gauge-delay': `${index * 120}ms` }}
     >
@@ -150,12 +160,21 @@ function ApprovalGauge({ label, count, total, startColor, endColor, textColor, i
           )}
         </svg>
         <div className="approval-gauge__center">
-          <span className="approval-gauge__count" style={{ color: textColor }}>
-            {unavailable ? '—' : animatedCount.toLocaleString()}
-          </span>
-          <span className="approval-gauge__percentage">
-            {unavailable ? '—' : percent}% of total
-          </span>
+          {loading ? (
+            <div className="flex flex-col items-center gap-1">
+              <Skeleton className="h-5 w-10" />
+              <Skeleton className="h-2 w-12" />
+            </div>
+          ) : (
+            <>
+              <span className="approval-gauge__count" style={{ color: textColor }}>
+                {unavailable ? '—' : animatedCount.toLocaleString()}
+              </span>
+              <span className="approval-gauge__percentage">
+                {unavailable ? '—' : percent}% of total
+              </span>
+            </>
+          )}
         </div>
       </div>
       <span className="approval-gauge__label">{label}</span>
@@ -163,7 +182,7 @@ function ApprovalGauge({ label, count, total, startColor, endColor, textColor, i
   );
 }
 
-export default function Dashboard({ role, actualRole = role, previewMode = false, showDrafts = false }) {
+export default function Dashboard({ role, actualRole = role, previewMode = false, showDrafts = false, user }) {
   const [drafts, setDrafts] = useState([]);
   const [filter, setFilter] = useState(['Manager', 'Reviewer'].includes(role) ? 'Pending Approval' : 'All');
   const [search, setSearch] = useState('');
@@ -176,6 +195,10 @@ export default function Dashboard({ role, actualRole = role, previewMode = false
   const [stats, setStats] = useState(null);
   const [statsError, setStatsError] = useState('');
   const [statsRefresh, setStatsRefresh] = useState(0);
+  const statsRequestRef = useRef(0);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deletingId, setDeletingId] = useState('');
+  const [removingDraftIds, setRemovingDraftIds] = useState(() => new Set());
 
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -241,18 +264,21 @@ export default function Dashboard({ role, actualRole = role, previewMode = false
 
   useEffect(() => {
     if (previewMode) {
+      statsRequestRef.current += 1;
       setStats(null);
       setStatsError('');
       return undefined;
     }
 
+    const requestId = ++statsRequestRef.current;
     let active = true;
-    setStats(null);
     setStatsError('');
     api.getDashboardStats()
-      .then(result => { if (active) setStats(result); })
+      .then(result => {
+        if (active && requestId === statsRequestRef.current) setStats(result);
+      })
       .catch(reason => {
-        if (!active) return;
+        if (!active || requestId !== statsRequestRef.current) return;
         const message = reason.message || 'Unable to load dashboard statistics.';
         setStatsError(message);
         toast.error(message, {
@@ -357,6 +383,45 @@ const visible = useMemo(() => {
   const ActionIcon = action.icon;
   const dataUnavailable = previewMode || loading || Boolean(error);
   const statsUnavailable = previewMode || !stats || Boolean(statsError);
+  const statsLoading = !stats && !previewMode && !statsError;
+  const canDeleteDrafts = !previewMode && role === 'Creator' && actualRole === 'Creator';
+  const firstName = String(user?.name || user?.email?.split('@')[0] || '').trim().split(/\s+/)[0] || 'there';
+  const currentHour = new Date().getHours();
+  const greeting = currentHour < 12 ? 'Good morning' : currentHour < 18 ? 'Good afternoon' : 'Good evening';
+
+  const confirmDeleteDraft = async () => {
+    if (!deleteTarget || deletingId) return;
+
+    const target = deleteTarget;
+    setDeletingId(target.id);
+    try {
+      await api.deleteDraft(target.id);
+      setRemovingDraftIds(current => new Set(current).add(target.id));
+      setStats(current => current ? {
+        ...current,
+        totalContent: Math.max(0, current.totalContent - 1),
+        needsChanges: Math.max(0, current.needsChanges - (target.status === 'Needs Changes' ? 1 : 0)),
+        flaggedContent: Math.max(0, current.flaggedContent - (target.findingsCount > 0 ? 1 : 0))
+      } : current);
+      statsRequestRef.current += 1;
+      setStatsRefresh(value => value + 1);
+
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      window.setTimeout(() => {
+        setDrafts(current => current.filter(draft => draft.id !== target.id));
+        setRemovingDraftIds(current => {
+          const next = new Set(current);
+          next.delete(target.id);
+          return next;
+        });
+      }, prefersReducedMotion ? 0 : 240);
+      toast.success('Draft deleted');
+    } catch (reason) {
+      toast.error(reason.message || 'Unable to delete draft.');
+    } finally {
+      setDeletingId('');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -387,7 +452,7 @@ const visible = useMemo(() => {
               {presentation.dashboardLabel}
             </span>
             <h1 className="mt-4 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
-              {presentation.dashboardTitle}
+              {greeting}, {firstName}
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base">
               {presentation.dashboardDescription}
@@ -398,7 +463,7 @@ const visible = useMemo(() => {
             <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-5 py-4 sm:min-w-[150px]">
               <p className="section-kicker">Pipeline health</p>
               <p className="mt-2 text-sm text-slate-500">Approved</p>
-              <p className="mt-0.5 text-2xl font-semibold tracking-tight text-slate-950">{dataUnavailable ? '—' : reviewed}</p>
+              <p className="mt-0.5 text-2xl font-semibold tracking-tight text-success-700">{dataUnavailable ? '—' : reviewed}</p>
             </div>
             <button
               className="btn-primary sm:min-h-[48px]"
@@ -418,30 +483,38 @@ const visible = useMemo(() => {
           value={statsUnavailable ? '—' : stats.totalContent}
           note={role === 'Creator' ? 'Your content items' : 'Workspace content items'}
           icon={FileText}
+          index={0}
+          loading={statsLoading}
         />
 
         <StatCard
           label="Pending reviews"
           value={statsUnavailable ? '—' : pending}
           note="Awaiting a review decision"
-          accent="text-amber-600"
+          accent="text-warning-700"
           icon={Clock3}
+          index={1}
+          loading={statsLoading}
         />
 
         <StatCard
           label="Approved"
           value={statsUnavailable ? '—' : reviewed}
           note="Cleared through the workflow"
-          accent="text-emerald-700"
+          accent="text-success-700"
           icon={CheckCircle2}
+          index={2}
+          loading={statsLoading}
         />
 
         <StatCard
           label="Flagged content"
           value={statsUnavailable ? '—' : flagged}
           note="Items with reported findings"
-          accent="text-rose-600"
+          accent="text-danger-600"
           icon={ShieldCheck}
+          index={3}
+          loading={statsLoading}
         />
       </div>}
 
@@ -515,7 +588,12 @@ const visible = useMemo(() => {
               </thead>
               <tbody>
                 {visible.map((draft) => (
-                  <tr key={draft.id} className="transition-colors hover:bg-slate-50/70">
+                  <tr
+                    key={draft.id}
+                    className={`dashboard-content-table__row transition-colors hover:bg-slate-50/70 ${
+                      removingDraftIds.has(draft.id) ? 'dashboard-content-table__row--removing' : ''
+                    }`}
+                  >
                     <td data-label="Content item" aria-label={`Content item: ${draft.title || 'Untitled'}`} className="dashboard-content-table__item px-3 py-3">
                       <p className="dashboard-content-table__title font-semibold text-slate-900" title={draft.title || 'Untitled'}>
                         {draft.title || 'Untitled'}
@@ -536,10 +614,10 @@ const visible = useMemo(() => {
                     <td data-label="Findings" aria-label={`Findings: ${draft.findingsCount} ${draft.findingsCount === 1 ? 'issue' : 'issues'}`} className="dashboard-content-table__findings px-3 py-3">
                       <span className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                         draft.findingsCount >= 3
-                          ? 'bg-rose-100 text-rose-800'
+                          ? 'bg-danger-100 text-danger-800'
                           : draft.findingsCount > 0
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-emerald-100 text-emerald-800'
+                            ? 'bg-warning-100 text-warning-800'
+                            : 'bg-success-100 text-success-800'
                       }`}>
                         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-70" aria-hidden="true" />
                         {draft.findingsCount} {draft.findingsCount === 1 ? 'issue' : 'issues'}
@@ -554,34 +632,54 @@ const visible = useMemo(() => {
                       </time>
                     </td>
                     <td data-label="Actions" className="dashboard-content-table__action px-1.5 py-3">
-                      <button
-                        type="button"
-                        className="btn-secondary dashboard-content-table__button"
-                        onClick={() => navigate(`/drafts/${draft.id}`)}
-                      >
-                        {role === 'Creator' && ['Draft', 'Needs Changes'].includes(draft.status) ? 'Edit' : 'Review'}
-                      </button>
+                      <div className="dashboard-content-table__actions">
+                        <button
+                          type="button"
+                          className="btn-secondary dashboard-content-table__button"
+                          onClick={() => navigate(`/drafts/${draft.id}`)}
+                        >
+                          {role === 'Creator' && ['Draft', 'Needs Changes'].includes(draft.status) ? 'Edit' : 'Review'}
+                        </button>
+                        {canDeleteDrafts && ['Draft', 'Needs Changes'].includes(draft.status) && (
+                          <button
+                            type="button"
+                            className="dashboard-content-table__delete"
+                            aria-label={`Delete draft: ${draft.title || 'Untitled'}`}
+                            title="Delete draft"
+                            disabled={deletingId === draft.id}
+                            onClick={() => setDeleteTarget(draft)}
+                          >
+                            {deletingId === draft.id
+                              ? <span className="dashboard-content-table__delete-loading" aria-hidden="true" />
+                              : <Trash2 size={14} aria-hidden="true" />}
+                            <span>{deletingId === draft.id ? 'Deleting' : 'Delete'}</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
                 {!visible.length && (
                   <tr className="dashboard-content-table__empty">
                     <td colSpan="6" className="px-5 py-14 text-center">
-                      <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
-                        <FileText size={21} aria-hidden="true" />
-                      </span>
-                      <p className="mt-3 font-semibold text-slate-800">
-                        {previewMode ? 'Workspace data unavailable in preview' : error ? 'Content unavailable' : loading ? 'Loading content…' : 'No content found'}
-                      </p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        {previewMode
-                          ? 'Role-scoped content is not loaded in development preview.'
-                          : error
-                          ? 'Workspace content could not be loaded.'
-                          : loading
-                            ? 'Content will appear here when available.'
-                            : 'Try another filter or create a new draft.'}
-                      </p>
+                      {loading ? (
+                        <div className="space-y-3" aria-label="Loading content">
+                          <Skeleton className="mx-auto h-5 w-48" />
+                          <Skeleton className="mx-auto h-4 w-64 max-w-full" />
+                          <Skeleton className="mx-auto h-4 w-40" />
+                        </div>
+                      ) : (
+                        <EmptyState
+                          title={previewMode ? 'Workspace data unavailable in preview' : error ? 'Content unavailable' : 'No content found'}
+                          description={previewMode
+                            ? 'Role-scoped content is not loaded in development preview.'
+                            : error
+                              ? 'Workspace content could not be loaded.'
+                              : 'Try another filter or create a new draft.'}
+                          actionLabel={!previewMode && !error && role === 'Creator' ? 'Create content' : undefined}
+                          onAction={() => navigate('/drafts/new')}
+                        />
+                      )}
                     </td>
                   </tr>
                 )}
@@ -606,23 +704,23 @@ const visible = useMemo(() => {
                 {
                   label: 'Approved',
                   count: reviewed,
-                  startColor: '#34d399',
-                  endColor: '#0f766e',
-                  textColor: '#047857'
+                  startColor: 'var(--success-500)',
+                  endColor: 'var(--success-700)',
+                  textColor: 'var(--success-700)'
                 },
                 {
                   label: 'Pending approval',
                   count: pending,
-                  startColor: '#fbbf24',
-                  endColor: '#ea580c',
-                  textColor: '#b45309'
+                  startColor: 'var(--warning-500)',
+                  endColor: 'var(--warning-700)',
+                  textColor: 'var(--warning-700)'
                 },
                 {
                   label: 'Needs changes',
                   count: needs,
-                  startColor: '#f472b6',
-                  endColor: '#e11d48',
-                  textColor: '#be123c'
+                  startColor: 'var(--danger-500)',
+                  endColor: 'var(--danger-600)',
+                  textColor: 'var(--danger-700)'
                 }
               ].map((gauge, index) => (
                 <ApprovalGauge
@@ -631,6 +729,7 @@ const visible = useMemo(() => {
                   total={totalContent}
                   index={index}
                   unavailable={statsUnavailable}
+                  loading={statsLoading}
                 />
               ))}
             </div>
@@ -669,18 +768,28 @@ const visible = useMemo(() => {
               <div className="mt-5 space-y-4" aria-label="Loading recent activity">
                 {[1, 2, 3].map(item => (
                   <div key={item} className="flex gap-3">
-                    <div className="skeleton h-8 w-8 shrink-0 rounded-lg" />
+                    <Skeleton className="h-8 w-8 shrink-0 rounded-lg" />
                     <div className="min-w-0 flex-1">
-                      <div className="skeleton h-3.5 w-3/4" />
-                      <div className="skeleton mt-2 h-3 w-1/2" />
+                      <Skeleton className="h-3.5 w-3/4" />
+                      <Skeleton className="mt-2 h-3 w-1/2" />
                     </div>
                   </div>
                 ))}
               </div>
-            ) : activityError ? null : activity.length ? (
+            ) : activityError ? (
+              <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-2">
+                <EmptyState
+                  compact
+                  title="Activity unavailable"
+                  description="Recent activity could not be loaded."
+                  actionLabel="Try again"
+                  onAction={() => setActivityRefresh(value => value + 1)}
+                />
+              </div>
+            ) : activity.length ? (
               <ol className="mt-4 divide-y divide-slate-100">
                 {activity.map((item, index) => (
-                  <li key={item.id || index} className="flex items-start gap-3 py-3 first:pt-1 last:pb-0">
+                  <li key={item.id || index} className="recent-activity-item flex items-start gap-3 rounded-lg px-2 py-3 first:pt-1 last:pb-0">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-800">
                       <Activity size={15} aria-hidden="true" />
                     </span>
@@ -689,7 +798,13 @@ const visible = useMemo(() => {
                       <p className="mt-0.5 truncate text-xs text-slate-500">
                         {item.item || item.draft?.title || item.resource || 'Workspace'} <span className="text-slate-300">·</span> {item.actor || item.user?.name || item.user?.email || item.user || 'System'}
                       </p>
+                      {(item.resourceId || item.draft?.id || item.itemId) && (
+                        <p className="mt-1 truncate font-mono text-[10px] text-slate-400" title={`ID: ${item.resourceId || item.draft?.id || item.itemId}`}>
+                          #{String(item.resourceId || item.draft?.id || item.itemId).slice(-6)}
+                        </p>
+                      )}
                     </div>
+                    {item.newStatus && <StatusBadge status={item.newStatus} />}
                     <time
                       className="shrink-0 pt-0.5 text-[11px] text-slate-400"
                       dateTime={item.when || item.createdAt || undefined}
@@ -700,15 +815,32 @@ const visible = useMemo(() => {
                 ))}
               </ol>
             ) : (
-              <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-6 text-center">
-                <Activity className="mx-auto text-slate-400" size={20} aria-hidden="true" />
-                <p className="mt-2 text-sm font-semibold text-slate-700">No activity recorded yet</p>
-                <p className="mt-1 text-xs text-slate-500">Recorded workflow events will appear here.</p>
+              <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-2">
+                <EmptyState
+                  compact
+                  title="No activity recorded yet"
+                  description="Recorded workflow events will appear here."
+                />
               </div>
             )}
           </section>
         </aside>}
       </div>
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Delete this draft?"
+        description={deleteTarget && (
+          <>
+            <span className="block font-medium text-slate-800">{deleteTarget.title || 'Untitled draft'}</span>
+            <span className="mt-1 block">This cannot be undone.</span>
+          </>
+        )}
+        confirmLabel="Delete draft"
+        onConfirm={confirmDeleteDraft}
+        onClose={() => {
+          if (!deletingId) setDeleteTarget(null);
+        }}
+      />
     </div>
   );
 }

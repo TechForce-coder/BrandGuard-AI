@@ -14,29 +14,34 @@ const ToastContext = createContext(null);
 
 const toastStyles = {
   success: {
-    border: 'border-l-emerald-500',
-    icon: 'text-emerald-600',
+    border: 'border-l-success-500',
+    icon: 'text-success-700',
+    progress: 'bg-success-500',
     Icon: CheckCircle2
   },
   error: {
     border: 'border-l-rose-500',
     icon: 'text-rose-600',
+    progress: 'bg-danger-500',
     Icon: XCircle
   },
   warning: {
     border: 'border-l-amber-500',
     icon: 'text-amber-600',
+    progress: 'bg-warning-500',
     Icon: TriangleAlert
   },
   info: {
     border: 'border-l-blue-600',
     icon: 'text-blue-700',
+    progress: 'bg-brand-500',
     Icon: Info
   }
 };
 
 function ToastItem({ item, onDismiss, onPause, onResume }) {
   const [entered, setEntered] = useState(false);
+  const [paused, setPaused] = useState(false);
   const style = toastStyles[item.type];
   const Icon = style.Icon;
 
@@ -48,13 +53,30 @@ function ToastItem({ item, onDismiss, onPause, onResume }) {
   return (
     <div
       role={item.type === 'error' ? 'alert' : 'status'}
-      className={`flex w-full items-start gap-3 rounded-xl border border-slate-200 border-l-4 ${style.border} bg-white p-4 text-sm text-slate-800 shadow-lg shadow-slate-900/10 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
+      className={`relative flex w-full items-start gap-3 overflow-hidden rounded-xl border border-slate-200 border-l-4 ${style.border} bg-white p-4 text-sm text-slate-800 shadow-lg shadow-slate-900/10 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
         entered
           ? 'translate-x-0 opacity-100'
           : 'translate-x-full opacity-0 motion-reduce:translate-x-0 motion-reduce:opacity-100'
       }`}
-      onMouseEnter={() => onPause(item.id)}
-      onMouseLeave={() => onResume(item.id)}
+      onMouseEnter={() => {
+        setPaused(true);
+        onPause(item.id);
+      }}
+      onMouseLeave={event => {
+        if (event.currentTarget.contains(document.activeElement)) return;
+        setPaused(false);
+        onResume(item.id);
+      }}
+      onFocusCapture={() => {
+        setPaused(true);
+        onPause(item.id);
+      }}
+      onBlurCapture={event => {
+        if (event.currentTarget.contains(event.relatedTarget)) return;
+        if (event.currentTarget.matches(':hover')) return;
+        setPaused(false);
+        onResume(item.id);
+      }}
     >
       <Icon className={`mt-0.5 shrink-0 ${style.icon}`} size={18} aria-hidden="true" />
       <div className="min-w-0 flex-1 whitespace-pre-wrap break-words leading-5">
@@ -83,6 +105,12 @@ function ToastItem({ item, onDismiss, onPause, onResume }) {
       >
         <X size={16} aria-hidden="true" />
       </button>
+      <span
+        key={item.progressKey}
+        className={`toast-progress ${style.progress} ${paused ? 'toast-progress--paused' : ''}`}
+        style={{ animationDuration: `${item.duration}ms` }}
+        aria-hidden="true"
+      />
     </div>
   );
 }
@@ -92,6 +120,7 @@ export function ToastProvider({ children }) {
   const itemsRef = useRef([]);
   const timersRef = useRef(new Map());
   const nextIdRef = useRef(0);
+  const nextProgressRef = useRef(0);
 
   const updateItems = useCallback(nextItems => {
     itemsRef.current = nextItems;
@@ -126,6 +155,8 @@ export function ToastProvider({ children }) {
       const updated = {
         ...duplicate,
         type,
+        duration,
+        progressKey: ++nextProgressRef.current,
         action: options.action || null
       };
       const nextItems = [updated, ...itemsRef.current.filter(item => item.id !== duplicate.id)];
@@ -138,6 +169,8 @@ export function ToastProvider({ children }) {
       id: ++nextIdRef.current,
       type,
       message: text,
+      duration,
+      progressKey: ++nextProgressRef.current,
       action: options.action || null
     };
     const nextItems = [item, ...itemsRef.current].slice(0, 4);

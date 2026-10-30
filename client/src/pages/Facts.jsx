@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { CalendarClock, FileCheck2, Plus, Trash2, X } from 'lucide-react';
 import { api } from '../api/api.js';
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
+import EmptyState from '../components/EmptyState.jsx';
+import Skeleton from '../components/Skeleton.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { formatDateTime } from '../utils/formatDateTime.js';
 import { canMutateInWorkspace } from '../utils/workspacePreview.js';
@@ -22,6 +25,7 @@ export default function Facts({ actualRole = '', previewMode = false }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [formOpen, setFormOpen] = useState(false);
   const canManage = canMutateInWorkspace(previewMode) &&
     ['manager', 'admin'].includes(String(actualRole).toLowerCase());
@@ -86,7 +90,7 @@ export default function Facts({ actualRole = '', previewMode = false }) {
   const remove = async fact => {
     if (!canManage) return;
     const id = String(fact._id || fact.id || '');
-    if (!id || !window.confirm(`Delete "${fact.title || fact.name || 'this fact'}"?`)) return;
+    if (!id) return;
     setError('');
     setMessage('');
     try {
@@ -117,7 +121,7 @@ export default function Facts({ actualRole = '', previewMode = false }) {
           <button type="button" className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs" onClick={() => setRefreshKey(key => key + 1)}>Retry</button>
         </div>
       )}
-      {message && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{message}</p>}
+      {message && <p role="status" className="rounded-lg border border-success-100 bg-success-50 px-4 py-3 text-sm text-success-800">{message}</p>}
 
       {formOpen && (
         <form onSubmit={save} className="surface-card space-y-4 p-5 sm:p-6">
@@ -182,24 +186,36 @@ export default function Facts({ actualRole = '', previewMode = false }) {
                   <td className="px-5 py-4">
                     <div className="flex gap-2">
                       <button type="button" disabled={!canManage} className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs" onClick={() => startEdit(fact)}>Edit</button>
-                      <button type="button" disabled={!canManage} className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs text-rose-700 hover:text-rose-800" onClick={() => remove(fact)} aria-label={`Delete ${fact.title || 'fact'}`}><Trash2 size={14} /></button>
+                      <button type="button" disabled={!canManage} className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs text-rose-700 hover:text-rose-800" onClick={() => setDeleteTarget(fact)} aria-label={`Delete ${fact.title || 'fact'}`}><Trash2 size={14} /></button>
                     </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {loading && <div className="space-y-3 p-5"><div className="skeleton h-10 w-full" /><div className="skeleton h-10 w-full" /></div>}
+          {loading && <div className="space-y-3 p-5" aria-label="Loading approved facts"><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div>}
           {!loading && error && !facts.length && <div className="px-5 py-12 text-center text-sm text-slate-500">Facts could not be loaded. Retry to check the connection.</div>}
           {!loading && !error && facts.length === 0 && (
-            <div className="px-5 py-14 text-center">
-              <FileCheck2 className="mx-auto text-slate-300" size={26} />
-              <p className="mt-3 text-sm font-semibold text-slate-800">No approved facts yet</p>
-              <p className="mt-1 text-sm text-slate-500">Add verified references to the organization’s fact register.</p>
+            <div className="px-5 py-8">
+              <EmptyState
+                title="No approved facts yet"
+                description="Add verified references to the organization’s fact register."
+                actionLabel="Add fact"
+                onAction={startCreate}
+                disabled={!canManage}
+              />
             </div>
           )}
         </div>
       </section>
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Delete approved fact?"
+        description={`Delete "${deleteTarget?.title || deleteTarget?.name || 'this fact'}"? This action cannot be undone.`}
+        confirmLabel="Delete fact"
+        onConfirm={() => remove(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

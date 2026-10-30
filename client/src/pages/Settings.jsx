@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 
 import { api } from '../api/api.js';
+import EmptyState from '../components/EmptyState.jsx';
+import Skeleton from '../components/Skeleton.jsx';
 
 const ROLES = ['creator', 'reviewer', 'manager', 'admin'];
 
@@ -133,17 +135,22 @@ export default function Settings() {
         )}
 
         {message && (
-          <p role="status" className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">
+          <p role="status" className="mt-4 rounded-lg bg-success-50 p-3 text-sm text-success-800">
             {message}
           </p>
         )}
 
         {loading ? (
-          <p className="py-8 text-sm text-slate-500">Loading users...</p>
+          <div className="space-y-3 py-5" aria-label="Loading users">
+            <Skeleton className="h-4 w-48" />
+            <Skeleton className="h-4 w-64 max-w-full" />
+          </div>
         ) : users.length === 0 ? (
-          <p className="py-8 text-sm text-slate-500">
-            No users found in this organisation.
-          </p>
+          <EmptyState
+            title="No users found"
+            description="There are no users in this organisation yet."
+            compact
+          />
         ) : (
           <div className="horizontal-scroll-fade mt-4" role="region" aria-label="Organization users table; scroll horizontally on small screens" tabIndex={0}>
             <table className="w-full min-w-[580px] text-left text-sm">

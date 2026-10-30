@@ -189,6 +189,10 @@ export const api = {
     return normalizeDraft(result?.draft || result);
   },
 
+  async deleteDraft(id) {
+    return request(`/drafts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+
   async saveDraft(draft) {
     const payload = {
       title: draft.title,

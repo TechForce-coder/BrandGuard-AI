@@ -142,6 +142,7 @@ export default function App() {
 
     return (
       <Login
+        className={`route-transition ${location.pathname === '/registration' ? 'route-transition--register' : 'route-transition--login'}`}
         initialMode={location.pathname === '/registration' ? 'register' : 'login'}
         developmentPreviewEnabled={previewEnabled}
         sessionError={sessionError}
@@ -210,6 +211,7 @@ export default function App() {
                 role={workspaceRole}
                 actualRole={actualRole}
                 previewMode={previewMode}
+                user={user}
               />
             }
           />
@@ -221,6 +223,7 @@ export default function App() {
                 role={workspaceRole}
                 actualRole={actualRole}
                 previewMode={previewMode}
+                user={user}
                 showDrafts
               />
             }

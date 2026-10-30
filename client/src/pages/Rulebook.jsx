@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { BookOpen, LockKeyhole, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
 import { api } from '../api/api.js';
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
+import EmptyState from '../components/EmptyState.jsx';
+import Skeleton from '../components/Skeleton.jsx';
 import { canMutateInWorkspace } from '../utils/workspacePreview.js';
 
 const emptyForm = { title: '', description: '', status: 'Active' };
@@ -14,6 +17,7 @@ export default function Rulebook({ actualRole = '', previewMode = false }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [formOpen, setFormOpen] = useState(false);
   const canManage = canMutateInWorkspace(previewMode) &&
     ['manager', 'admin'].includes(String(actualRole).toLowerCase());
@@ -76,7 +80,7 @@ export default function Rulebook({ actualRole = '', previewMode = false }) {
   const remove = async rule => {
     if (!canManage) return;
     const id = String(rule._id || rule.id || '');
-    if (!id || !window.confirm(`Delete "${rule.title || rule.name || 'this guideline'}"?`)) return;
+    if (!id) return;
     setError('');
     setMessage('');
     try {
@@ -107,7 +111,7 @@ export default function Rulebook({ actualRole = '', previewMode = false }) {
           <button type="button" className="btn-secondary !min-h-8 !px-3 !py-1.5 !text-xs" onClick={() => setRefreshKey(key => key + 1)}>Retry</button>
         </div>
       )}
-      {message && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{message}</p>}
+      {message && <p role="status" className="rounded-lg border border-success-100 bg-success-50 px-4 py-3 text-sm text-success-800">{message}</p>}
 
       {formOpen && (
         <form onSubmit={save} className="surface-card space-y-4 p-5 sm:p-6">
@@ -143,7 +147,7 @@ export default function Rulebook({ actualRole = '', previewMode = false }) {
       )}
 
       {loading ? (
-        <div className="grid gap-4 md:grid-cols-2">{[1, 2, 3].map(item => <div key={item} className="surface-card p-6"><div className="skeleton h-4 w-24" /><div className="skeleton mt-4 h-5 w-48" /><div className="skeleton mt-4 h-16 w-full" /></div>)}</div>
+        <div className="grid gap-4 md:grid-cols-2" aria-label="Loading guidelines">{[1, 2, 3].map(item => <div key={item} className="surface-card p-6"><Skeleton className="h-4 w-24" /><Skeleton className="mt-4 h-5 w-48" /><Skeleton className="mt-4 h-16 w-full" /></div>)}</div>
       ) : error && !rules.length ? (
         <div className="surface-card px-5 py-14 text-center">
           <BookOpen className="mx-auto text-slate-300" size={26} />
@@ -156,25 +160,38 @@ export default function Rulebook({ actualRole = '', previewMode = false }) {
             <article key={rule._id || rule.id || index} className="surface-card flex flex-col p-5 sm:p-6">
               <div className="flex items-start justify-between gap-3">
                 <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-800"><BookOpen size={19} aria-hidden="true" /></span>
-                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${rule.status === 'Inactive' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-800'}`}>{rule.status || 'Active'}</span>
+                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${rule.status === 'Inactive' ? 'bg-slate-100 text-slate-600' : 'bg-success-50 text-success-800'}`}>{rule.status || 'Active'}</span>
               </div>
               <h2 className="mt-4 text-base font-semibold text-slate-950">{rule.title || rule.name || 'Brand guideline'}</h2>
               <p className="mt-1 break-all font-mono text-[11px] text-slate-400">ID: {rule._id || rule.id || '—'}</p>
               <p className="mt-2 flex-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">{rule.description || rule.text || 'No description provided.'}</p>
               <div className="mt-5 flex gap-2 border-t border-slate-100 pt-4">
                 <button type="button" disabled={!canManage} className="btn-secondary !min-h-9 !px-3 !py-2 text-xs" onClick={() => startEdit(rule)}>Edit</button>
-                <button type="button" disabled={!canManage} className="btn-secondary !min-h-9 !px-3 !py-2 text-xs text-rose-700 hover:text-rose-800" onClick={() => remove(rule)}><Trash2 size={14} /> Delete</button>
+                <button type="button" disabled={!canManage} className="btn-secondary !min-h-9 !px-3 !py-2 text-xs text-rose-700 hover:text-rose-800" onClick={() => setDeleteTarget(rule)}><Trash2 size={14} /> Delete</button>
               </div>
             </article>
           ))}
         </div>
       ) : (
-        <div className="surface-card px-5 py-14 text-center">
-          <BookOpen className="mx-auto text-slate-300" size={26} />
-          <p className="mt-3 text-sm font-semibold text-slate-800">No guidelines configured</p>
-          <p className="mt-1 text-sm text-slate-500">Add workspace guidance to make it available to authorized reviewers.</p>
+        <div className="surface-card px-5 py-8">
+          <EmptyState
+            title="No guidelines configured"
+            description="Add workspace guidance to make it available to authorized reviewers."
+            actionLabel="Add guideline"
+            onAction={startCreate}
+            disabled={!canManage}
+          />
         </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Delete guideline?"
+        description={`Delete "${deleteTarget?.title || deleteTarget?.name || 'this guideline'}"? This action cannot be undone.`}
+        confirmLabel="Delete guideline"
+        onConfirm={() => remove(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+      />
 
       <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3.5">
         <LockKeyhole size={16} className="mt-0.5 shrink-0 text-slate-500" aria-hidden="true" />

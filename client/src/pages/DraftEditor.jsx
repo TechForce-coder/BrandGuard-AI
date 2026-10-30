@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
+  AlertCircle,
   ArrowLeft,
   CheckCircle2,
   GitCompare,
@@ -9,10 +10,12 @@ import {
   ScanLine,
   ScanSearch,
   Send,
+  Trash2,
   X,
 } from 'lucide-react';
 
 import { api } from '../api/api.js';
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import Editor from '../components/Editor.jsx';
 import DiffViewer from '../components/DiffViewer.jsx';
 import FindingsPanel from '../components/FindingsPanel.jsx';
@@ -64,6 +67,8 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [scanned, setScanned] = useState(false);
   const [scanStatus, setScanStatus] = useState('not-scanned');
   const [scanWarning, setScanWarning] = useState('');
@@ -80,6 +85,8 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
   const readOnly = previewMode || authenticatedRole !== 'creator' || (
     Boolean(draftId) && !['Draft', 'Needs Changes'].includes(status)
   );
+  const canDeleteDraft = Boolean(draftId) && !previewMode &&
+    authenticatedRole === 'creator' && ['Draft', 'Needs Changes'].includes(status);
 
   useEffect(() => {
     if (previewMode) {
@@ -270,6 +277,21 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
     if (!canMutateInWorkspace(previewMode)) {
       toast.warning('Saving is disabled in development workspace preview.');
       return null;
+    }
+
+    async function handleDeleteDraft() {
+      if (!canDeleteDraft || deleting) return;
+
+      setDeleting(true);
+      try {
+        await api.deleteDraft(draftId);
+        toast.success('Draft deleted');
+        navigate('/drafts');
+      } catch (reason) {
+        toast.error(reason.message || 'Unable to delete draft.');
+      } finally {
+        setDeleting(false);
+      }
     }
 
     const { navigateAfter = true, content: contentOverride } = options;
@@ -848,15 +870,21 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
                       }}
                       disabled={readOnly || imageScanning}
                       aria-invalid={Boolean(imageUrlError)}
-                      aria-describedby="draft-image-help"
+                      aria-describedby={`draft-image-help${imageUrlError ? ' draft-image-url-error' : ''}${imageInputError ? ' draft-image-input-error' : ''}`}
                       className="input w-full"
                       placeholder="https://example.com/image.jpg"
                     />
                     {imageUrlError && (
-                      <p role="alert" className="text-sm text-rose-700">{imageUrlError}</p>
+                      <p id="draft-image-url-error" role="alert" className="field-error">
+                        <AlertCircle className="field-validation-icon" aria-hidden="true" />
+                        {imageUrlError}
+                      </p>
                     )}
                     {imageInputError && (
-                      <p role="alert" className="text-sm text-rose-700">{imageInputError}</p>
+                      <p id="draft-image-input-error" role="alert" className="field-error">
+                        <AlertCircle className="field-validation-icon" aria-hidden="true" />
+                        {imageInputError}
+                      </p>
                     )}
                   </div>
 
@@ -976,6 +1004,17 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
               )}
               Submit for approval
             </button>
+            {canDeleteDraft && (
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmOpen(true)}
+                disabled={saving || scanning || submitting || deleting}
+                className="inline-flex items-center gap-2 rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-700 transition-colors hover:bg-rose-50 hover:text-rose-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Trash2 size={16} aria-hidden="true" />
+                Delete draft
+              </button>
+            )}
           </div>
         )}
 
@@ -1080,6 +1119,21 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
           />
         </section>
       )}
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title="Delete this draft?"
+        description={(
+          <>
+            <span className="block font-medium text-slate-800">{draft?.title || title || 'Untitled draft'}</span>
+            <span className="mt-1 block">This cannot be undone.</span>
+          </>
+        )}
+        confirmLabel="Delete draft"
+        onConfirm={handleDeleteDraft}
+        onClose={() => {
+          if (!deleting) setDeleteConfirmOpen(false);
+        }}
+      />
     </div>
   );
 }

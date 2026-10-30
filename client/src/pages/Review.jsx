@@ -11,6 +11,8 @@ import {
   ChevronDown 
 } from 'lucide-react';
 import { api } from '../api/api.js';
+import EmptyState from '../components/EmptyState.jsx';
+import Skeleton from '../components/Skeleton.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import DiffViewer from '../components/DiffViewer.jsx';
 import { useToast } from '../components/Toast.jsx';
@@ -234,12 +236,15 @@ export default function Review({ role, actualRole = role, previewMode = false })
               ))}
             </tbody>
           </table>
-          {loading && <div className="space-y-3 p-5"><div className="skeleton h-10 w-full" /><div className="skeleton h-10 w-full" /></div>}
+          {loading && <div className="space-y-3 p-5" aria-label="Loading submissions"><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div>}
           {!loading && !error && rows.length === 0 && (
-            <div className="px-5 py-14 text-center">
-              <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-800"><ClipboardCheck size={21} /></span>
-              <p className="mt-3 text-sm font-semibold text-slate-800">{previewMode ? 'Queue data unavailable in preview' : 'No items in this view'}</p>
-              <p className="mt-1 text-sm text-slate-500">{previewMode ? 'No reviewer-scoped submissions are loaded in a development preview.' : 'Try another status or search term. New submissions will appear here.'}</p>
+            <div className="px-5 py-8">
+              <EmptyState
+                title={previewMode ? 'Queue data unavailable in preview' : 'No items in this view'}
+                description={previewMode ? 'No reviewer-scoped submissions are loaded in a development preview.' : 'Try another status or search term. New submissions will appear here.'}
+                actionLabel={!previewMode ? 'Show all submissions' : undefined}
+                onAction={!previewMode ? () => { setFilter('All'); setSearch(''); } : undefined}
+              />
             </div>
           )}
         </div>

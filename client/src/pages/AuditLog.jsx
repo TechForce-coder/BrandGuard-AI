@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Activity, ClipboardList, ShieldCheck } from 'lucide-react';
+import { Activity, ClipboardList, ShieldCheck, Trash2 } from 'lucide-react';
 import { api } from '../api/api.js';
+import EmptyState from '../components/EmptyState.jsx';
+import Skeleton from '../components/Skeleton.jsx';
 import { formatDateTime } from '../utils/formatDateTime.js';
+
+const actionPresentation = {
+  Deleted: {
+    Icon: Trash2,
+    className: 'bg-rose-50 text-rose-700'
+  }
+};
 
 export default function AuditLog() {
   const [logs, setLogs] = useState([]);
@@ -91,33 +100,39 @@ export default function AuditLog() {
           </div>
         </div>
         {loading ? (
-          <div className="space-y-4 p-5 sm:p-6">{[1, 2, 3].map(item => <div key={item} className="flex gap-3"><div className="skeleton h-9 w-9 shrink-0 rounded-xl" /><div className="flex-1"><div className="skeleton h-4 w-40" /><div className="skeleton mt-2 h-3 w-64" /></div></div>)}</div>
+          <div className="space-y-4 p-5 sm:p-6" aria-label="Loading activity">{[1, 2, 3].map(item => <div key={item} className="flex gap-3"><Skeleton className="h-9 w-9 shrink-0 rounded-xl" /><div className="flex-1"><Skeleton className="h-4 w-40" /><Skeleton className="mt-2 h-3 w-64" /></div></div>)}</div>
         ) : visibleLogs.length ? (
           <ol className="divide-y divide-slate-100">
-            {visibleLogs.map((log, index) => (
-              <li key={log.id || index} className="flex items-start gap-3 px-5 py-5 transition-colors hover:bg-slate-50/70 sm:gap-4 sm:px-6">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-500"><Activity size={17} /></span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-slate-900">{log.action || log.event || 'Workflow event'}</p>
-                  <p className="mt-1 text-sm text-slate-600">{log.item || log.resource || 'Workflow event'} <span className="text-slate-300">·</span> {log.actor || log.user || 'System'}</p>
-                  {log.comment && <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{log.comment}</p>}
-                  {(log.previousStatus || log.newStatus || log.resourceId) && (
-                    <p className="mt-2 text-xs text-slate-500">
-                      {log.previousStatus && <>From {log.previousStatus}</>}
-                      {log.previousStatus && log.newStatus && ' · '}
-                      {log.newStatus && <>To {log.newStatus}</>}
-                      {log.resourceId && <> · {log.resourceType || 'Entity'} ID: {log.resourceId}</>}
-                    </p>
-                  )}
-                </div>
-                <time
-                  className="shrink-0 pt-0.5 text-xs text-slate-400"
-                  dateTime={log.when || log.createdAt || undefined}
-                >
-                  {formatDateTime(log.when || log.createdAt)}
-                </time>
-              </li>
-            ))}
+            {visibleLogs.map((log, index) => {
+              const presentation = actionPresentation[log.action] || {};
+              const ActionIcon = presentation.Icon || Activity;
+              return (
+                <li key={log.id || index} className="flex items-start gap-3 px-5 py-5 transition-colors hover:bg-slate-50/70 sm:gap-4 sm:px-6">
+                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${presentation.className || 'bg-slate-50 text-slate-500'}`}>
+                    <ActionIcon size={17} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-slate-900">{log.action || log.event || 'Workflow event'}</p>
+                    <p className="mt-1 text-sm text-slate-600">{log.item || log.resource || 'Workflow event'} <span className="text-slate-300">·</span> {log.actor || log.user || 'System'}</p>
+                    {log.comment && <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{log.comment}</p>}
+                    {(log.previousStatus || log.newStatus || log.resourceId) && (
+                      <p className="mt-2 text-xs text-slate-500">
+                        {log.previousStatus && <>From {log.previousStatus}</>}
+                        {log.previousStatus && log.newStatus && ' · '}
+                        {log.newStatus && <>To {log.newStatus}</>}
+                        {log.resourceId && <> · {log.resourceType || 'Entity'} ID: {log.resourceId}</>}
+                      </p>
+                    )}
+                  </div>
+                  <time
+                    className="shrink-0 pt-0.5 text-xs text-slate-400"
+                    dateTime={log.when || log.createdAt || undefined}
+                  >
+                    {formatDateTime(log.when || log.createdAt)}
+                  </time>
+                </li>
+              );
+            })}
           </ol>
         ) : error ? (
           <div className="px-5 py-14 text-center">
@@ -126,10 +141,13 @@ export default function AuditLog() {
             <p className="mt-1 text-sm text-slate-500">Audit events could not be loaded.</p>
           </div>
         ) : (
-          <div className="px-5 py-14 text-center">
-            <ClipboardList className="mx-auto text-slate-300" size={26} />
-            <p className="mt-3 text-sm font-semibold text-slate-800">{logs.length ? 'No matching activity' : 'No activity recorded yet'}</p>
-            <p className="mt-1 text-sm text-slate-500">{logs.length ? 'Adjust the search or action filter.' : 'Workflow events will appear here as they are recorded.'}</p>
+          <div className="px-5 py-8">
+            <EmptyState
+              title={logs.length ? 'No matching activity' : 'No activity recorded yet'}
+              description={logs.length ? 'Adjust the search or action filter.' : 'Workflow events will appear here as they are recorded.'}
+              actionLabel={logs.length ? 'Clear search' : undefined}
+              onAction={logs.length ? () => setSearch('') : undefined}
+            />
           </div>
         )}
       </section>

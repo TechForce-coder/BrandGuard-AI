@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Check, X, MessageSquareWarning, ShieldAlert, WandSparkles } from 'lucide-react';
+import EmptyState from './EmptyState.jsx';
 import StatusBadge from './StatusBadge.jsx';
 
 export default function FindingsPanel({ findings = [], onDecision, onApplySuggestion, readOnly = false }) {
@@ -7,8 +8,12 @@ export default function FindingsPanel({ findings = [], onDecision, onApplySugges
 
   if (!findings.length) {
     return (
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-800">
-        No findings were returned by this scan. Always review content before publishing.
+      <div className="rounded-xl border border-success-100 bg-success-50 p-5 text-sm text-success-800">
+        <EmptyState
+          compact
+          title="No findings returned"
+          description="Always review content before publishing."
+        />
       </div>
     );
   }

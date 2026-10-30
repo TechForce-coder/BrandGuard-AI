@@ -72,7 +72,7 @@ function DemoAccountCard({ account, onUseCredentials }) {
               </span>
               <button
                 type="button"
-                className="inline-flex min-h-6 shrink-0 items-center gap-1 rounded-md border border-slate-200 px-1.5 text-[9px] font-semibold text-slate-700 transition hover:bg-slate-50"
+                className={`demo-copy-button inline-flex min-h-6 shrink-0 items-center gap-1 rounded-md border border-slate-200 px-1.5 text-[9px] font-semibold text-slate-700 transition hover:bg-slate-50 ${copied === field ? 'demo-copy-button--copied' : ''}`}
                 onClick={() => copyCredential(field, value)}
                 aria-label={`Copy ${account.role} demo ${label.toLowerCase()}`}
               >
@@ -128,7 +128,8 @@ export default function Login({
   onLogin,
   sessionError = '',
   developmentPreviewEnabled = false,
-  initialMode = 'login'
+  initialMode = 'login',
+  className = ''
 }) {
   const navigate = useNavigate();
 
@@ -142,11 +143,24 @@ export default function Login({
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [credentialsHighlighted, setCredentialsHighlighted] = useState(false);
+  const credentialsTimeoutRef = useRef(null);
 
   // Synchronize internal state when the URL changes directly
   useEffect(() => {
     setMode(initialMode);
   }, [initialMode]);
+
+  useEffect(() => () => clearTimeout(credentialsTimeoutRef.current), []);
+
+  const useDemoCredentials = (demoEmail, demoPassword) => {
+    setEmail(demoEmail);
+    setPassword(demoPassword);
+    setError('');
+    setCredentialsHighlighted(true);
+    clearTimeout(credentialsTimeoutRef.current);
+    credentialsTimeoutRef.current = setTimeout(() => setCredentialsHighlighted(false), 1200);
+  };
 
   const toggleMode = () => {
     setError('');
@@ -191,12 +205,14 @@ export default function Login({
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-6 sm:px-6 sm:py-10">
-      <div className="grid w-full max-w-[960px] rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/5 md:min-h-[560px] md:grid-cols-[1.05fr_.95fr]">
-        <aside className="hidden flex-col justify-between border-r border-slate-200 bg-slate-50 p-8 text-slate-900 md:flex lg:p-10">
-          <div className="relative flex items-center gap-3">
+    <div className={`login-page flex min-h-screen items-center justify-center bg-slate-50 px-4 py-6 sm:px-6 sm:py-10 ${className}`}>
+      <div className={`login-card grid w-full max-w-[960px] rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/5 md:min-h-[560px] md:grid-cols-[1.05fr_.95fr] ${error || sessionError ? 'login-card--error' : ''}`}>
+        <aside className="login-brand-panel relative hidden flex-col justify-between overflow-hidden border-r border-blue-100 p-8 text-slate-900 md:flex lg:p-9">
+          <span className="login-orb login-orb--one" aria-hidden="true" />
+          <span className="login-orb login-orb--two" aria-hidden="true" />
+          <div className="login-brand-logo relative flex items-center gap-3">
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-900 text-blue-100">
-              <ShieldCheck size={25} strokeWidth={1.8} />
+              <ShieldCheck size={25} strokeWidth={1.8} aria-hidden="true" />
             </span>
             <span className="text-xl font-semibold tracking-tight text-slate-950">BrandGuard</span>
           </div>
@@ -204,42 +220,39 @@ export default function Login({
             {mode === 'login' && import.meta.env.VITE_SHOW_DEMO_ACCESS !== 'false' && (
               <DemoAccessPanel
                 headingId="desktop-demo-access-heading"
-                onUseCredentials={(demoEmail, demoPassword) => {
-                  setEmail(demoEmail);
-                  setPassword(demoPassword);
-                  setError('');
-                }}
+                onUseCredentials={useDemoCredentials}
               />
             )}
             <div className="max-w-md">
-              <span className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[.12em] text-blue-800">
-                <Sparkles size={13} /> Brand governance platform
+              <span className="login-brand-badge inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[.12em] text-blue-800">
+                <Sparkles size={13} aria-hidden="true" /> Brand governance platform
               </span>
-              <h1 className="mt-6 text-[40px] font-semibold leading-[1.12] tracking-tight lg:text-5xl">
-                Confident content.<br />Consistent brand.
+              <h1 className="login-brand-headline mt-5 text-[34px] font-semibold leading-[1.12] tracking-tight lg:text-[42px]">
+                <span className="login-headline-line">Confident content.</span><br />
+                <span className="login-headline-line login-headline-gradient">Consistent brand.</span>
               </h1>
-              <p className="mt-5 max-w-sm text-sm leading-7 text-slate-600">
+              <p className="login-brand-copy mt-3 max-w-sm text-sm leading-6 text-slate-600">
                 One thoughtful workflow to review, improve, and approve content before it reaches your audience.
               </p>
             </div>
           </div>
-          <div className="relative flex items-center gap-2 text-xs text-slate-500">
-            <LockKeyhole size={14} /> Human decisions stay in control.
+          <div className="login-trust-line relative flex items-center gap-2 text-xs text-slate-600">
+            <LockKeyhole size={14} className="text-blue-800" aria-hidden="true" /> Human decisions stay in control.
           </div>
         </aside>
 
-        <form onSubmit={submit} className="flex flex-col justify-center p-7 sm:p-10 lg:p-12">
-          <div className="mb-8 flex items-center gap-3 md:hidden">
+        <form onSubmit={submit} className={`login-form flex flex-col justify-center p-7 sm:p-10 lg:p-11 ${credentialsHighlighted ? 'login-form--credentials' : ''}`}>
+          <div className="login-mobile-logo mb-6 flex items-center gap-3 md:hidden">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-900 text-white">
               <ShieldCheck size={22} />
             </span>
             <span className="text-xl font-semibold tracking-tight text-slate-950">BrandGuard</span>
           </div>
-          <p className="text-xs font-semibold uppercase tracking-[.12em] text-blue-800">Secure workspace access</p>
-          <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">
+          <p className="login-form-kicker text-xs font-semibold uppercase tracking-[.12em] text-blue-800">Secure workspace access</p>
+          <h2 className="login-form-heading mt-2 text-3xl font-semibold tracking-tight text-slate-950">
             {mode === 'login' ? 'Welcome back' : 'Create your account'}
           </h2>
-          <p className="mt-2 text-sm leading-6 text-slate-500">
+          <p className="login-form-description mt-2 text-sm leading-6 text-slate-500">
             {mode === 'login'
               ? 'Sign in to continue to your brand governance workspace.'
               : 'Join your organisation and start with the Creator role.'}
@@ -247,7 +260,7 @@ export default function Login({
 
           {mode === 'register' && (
             <>
-              <label className="mt-5 block text-sm font-semibold text-slate-800">
+              <label className="login-form-field mt-5 block text-sm font-semibold text-slate-800">
                 Full name
                 <input
                   className="field mt-2"
@@ -261,7 +274,7 @@ export default function Login({
                   onChange={event => setName(event.target.value)}
                 />
               </label>
-              <label className="mt-4 block text-sm font-semibold text-slate-800">
+              <label className="login-form-field mt-4 block text-sm font-semibold text-slate-800">
                 Organisation ID
                 <input
                   className="field mt-2"
@@ -277,7 +290,7 @@ export default function Login({
             </>
           )}
 
-          <label className={`${mode === 'register' ? 'mt-4' : 'mt-7'} block text-sm font-semibold text-slate-800`}>
+          <label className={`login-form-field ${mode === 'register' ? 'mt-4' : 'mt-6'} block text-sm font-semibold text-slate-800`}>
             Work email
             <input
               className="field mt-2"
@@ -291,7 +304,7 @@ export default function Login({
             />
           </label>
 
-          <label className="mt-4 block text-sm font-semibold text-slate-800">
+          <label className="login-form-field mt-4 block text-sm font-semibold text-slate-800">
             Password
             <div className="relative mt-2">
               <input
@@ -318,7 +331,7 @@ export default function Login({
           </label>
 
           {mode === 'register' && (
-            <label className="mt-4 block text-sm font-semibold text-slate-800">
+            <label className="login-form-field mt-4 block text-sm font-semibold text-slate-800">
               Confirm password
               <input
                 className="field mt-2"
@@ -335,7 +348,7 @@ export default function Login({
           )}
 
           {mode === 'register' && (
-            <label className="mt-4 block text-sm font-semibold text-slate-800">
+            <label className="login-form-field mt-4 block text-sm font-semibold text-slate-800">
               Select Account Role
               <select
                 className="field mt-2"
@@ -353,29 +366,34 @@ export default function Login({
           )}
 
           {(error || sessionError) && (
-            <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-sm text-rose-800">
+            <p key={error || sessionError} role="alert" className="login-error mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-sm text-rose-800">
               {error || sessionError}
             </p>
           )}
 
-          <button type="submit" disabled={busy} className="btn-primary mt-6 w-full justify-center py-3">
+          <button
+            type="submit"
+            disabled={busy}
+            aria-busy={busy}
+            className={`login-submit btn-primary mt-5 w-full justify-center py-3 ${busy ? 'btn-loading' : ''}`}
+          >
             {busy ? (mode === 'login' ? 'Signing in…' : 'Creating account…') : (mode === 'login' ? 'Sign in' : 'Create account')}{' '}
             <ArrowRight size={16} />
           </button>
 
-          <p className="mt-4 text-center text-sm text-slate-600">
+          <p className="login-form-switch mt-4 text-center text-sm text-slate-600">
             {mode === 'login' ? 'New to BrandGuard?' : 'Already have an account?'}{' '}
             <button
               type="button"
               disabled={busy}
-              className="font-semibold text-blue-800 hover:text-blue-950 disabled:opacity-50"
+              className="login-switch-link font-semibold text-blue-800 hover:text-blue-950 disabled:opacity-50"
               onClick={toggleMode}
             >
               {mode === 'login' ? 'Create account' : 'Sign in'}
             </button>
           </p>
 
-          <div className="mt-5 flex items-start gap-2.5 rounded-xl bg-slate-50 p-3.5 text-xs leading-5 text-slate-500">
+          <div className="login-trust-note mt-5 flex items-start gap-2.5 rounded-xl bg-slate-50 p-3.5 text-xs leading-5 text-slate-500">
             <Check size={15} className="mt-0.5 shrink-0 text-blue-700" />
             <span>Use your organization credentials. Your account is managed by your organization.</span>
           </div>
@@ -384,11 +402,7 @@ export default function Login({
           <div className="px-4 pb-5 sm:px-7 md:hidden">
             <DemoAccessPanel
               headingId="mobile-demo-access-heading"
-              onUseCredentials={(demoEmail, demoPassword) => {
-                setEmail(demoEmail);
-                setPassword(demoPassword);
-                setError('');
-              }}
+              onUseCredentials={useDemoCredentials}
             />
           </div>
         )}
