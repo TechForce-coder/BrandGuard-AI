@@ -74,6 +74,11 @@ const draftSchema = new mongoose.Schema(
             maxlength: 300,
             default: ""
         },
+        imageUrl: {
+            type: String,
+            trim: true,
+            default: ""
+        },
         status: {
             type: String,
             enum: [
