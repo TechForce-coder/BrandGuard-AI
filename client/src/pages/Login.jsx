@@ -1,44 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Check, CheckCheck, Clipboard, Eye, EyeOff, FilePlus2, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react';
+import { ArrowRight, Check, Eye, EyeOff, FilePlus2, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react';
 import { api } from '../api/api.js';
 import { demoAccounts } from '../config/demoAccounts.js';
 import { isWorkspacePreviewSelectorDisabled } from '../utils/workspacePreview.js';
 
+const DEMO_ORGANISATION_ID = '6ae2104b069e81d97d1f36e2';
+
 function DemoAccountCard({ account, onUseCredentials }) {
-  const [copied, setCopied] = useState('');
-  const [copyError, setCopyError] = useState(false);
-  const timeoutRef = useRef(null);
   const RoleIcon = account.role === 'Manager' ? ShieldCheck : FilePlus2;
-
-  useEffect(() => () => clearTimeout(timeoutRef.current), []);
-
-  async function copyCredential(field, value) {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(value);
-      } else {
-        const temporaryInput = document.createElement('textarea');
-        temporaryInput.value = value;
-        temporaryInput.setAttribute('readonly', '');
-        temporaryInput.style.position = 'fixed';
-        temporaryInput.style.opacity = '0';
-        document.body.appendChild(temporaryInput);
-        temporaryInput.select();
-        const copiedSuccessfully = document.execCommand('copy');
-        temporaryInput.remove();
-        if (!copiedSuccessfully) throw new Error('Clipboard copy was unsuccessful.');
-      }
-
-      setCopied(field);
-      setCopyError(false);
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = setTimeout(() => setCopied(''), 1600);
-    } catch {
-      setCopied('');
-      setCopyError(true);
-    }
-  }
 
   return (
     <article className="demo-account-card min-w-0 rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
@@ -58,37 +28,18 @@ function DemoAccountCard({ account, onUseCredentials }) {
 
       <div className="mt-1.5 space-y-1">
         {[
-          ['Email', account.email, 'email'],
-          ['Password', account.password, 'password']
-        ].map(([label, value, field]) => (
-          <div key={field} className="min-w-0">
+          ['Email', account.email],
+          ['Password', account.password]
+        ].map(([label, value]) => (
+          <div key={label} className="min-w-0">
             <p className="text-[9px] font-medium leading-3 text-slate-500">{label}</p>
-            <div className="mt-0.5 flex min-w-0 items-center gap-1">
-              <span
-                className="min-w-0 flex-1 truncate whitespace-nowrap text-[10px] font-medium leading-4 text-slate-800"
-                title={value}
-              >
-                {value}
-              </span>
-              <button
-                type="button"
-                className={`demo-copy-button inline-flex min-h-6 shrink-0 items-center gap-1 rounded-md border border-slate-200 px-1.5 text-[9px] font-semibold text-slate-700 transition hover:bg-slate-50 ${copied === field ? 'demo-copy-button--copied' : ''}`}
-                onClick={() => copyCredential(field, value)}
-                aria-label={`Copy ${account.role} demo ${label.toLowerCase()}`}
-              >
-                {copied === field
-                  ? <CheckCheck size={12} aria-hidden="true" />
-                  : <Clipboard size={12} aria-hidden="true" />}
-                {copied === field ? 'Copied' : 'Copy'}
-              </button>
-            </div>
+            <span className="mt-0.5 block min-w-0 select-text break-all text-left text-[10px] font-medium leading-4 text-slate-800">
+              {value}
+            </span>
           </div>
         ))}
       </div>
 
-      <p className="sr-only" aria-live="polite" aria-atomic="true">
-        {copied ? 'Copied' : copyError ? 'Could not copy. Please select and copy the text.' : ''}
-      </p>
       <button
         type="button"
         className="btn-secondary mt-1.5 min-h-8 w-full px-2 py-1.5 text-[10px]"
@@ -100,10 +51,10 @@ function DemoAccountCard({ account, onUseCredentials }) {
   );
 }
 
-function DemoAccessPanel({ onUseCredentials, headingId }) {
+function DemoAccessPanel({ onUseCredentials, headingId, className = '' }) {
   return (
     <section
-      className="demo-access-panel w-full max-w-md rounded-xl border border-blue-100 bg-white/90 p-2.5 shadow-sm sm:p-3"
+      className={`demo-access-panel w-full max-w-md rounded-xl border border-blue-100 bg-white/90 p-2.5 shadow-sm sm:p-3 ${className}`}
       aria-labelledby={headingId}
     >
       <div className="flex items-baseline gap-2">
@@ -119,6 +70,38 @@ function DemoAccessPanel({ onUseCredentials, headingId }) {
       </div>
       <p className="mt-1.5 whitespace-nowrap text-center text-[9px] leading-4 text-slate-600">
         These are demo accounts for judges. No real data.
+      </p>
+    </section>
+  );
+}
+
+function DemoOrganisationPanel({ onUseOrganisationId, headingId, className = '' }) {
+  return (
+    <section
+      className={`demo-access-panel w-full max-w-md rounded-xl border border-blue-100 bg-white/90 p-2.5 shadow-sm sm:p-3 ${className}`}
+      aria-labelledby={headingId}
+    >
+      <div className="flex items-baseline gap-2">
+        <p className="shrink-0 text-[9px] font-bold uppercase tracking-[.14em] text-blue-800">For judges</p>
+        <h3 id={headingId} className="truncate text-xs font-semibold text-slate-900">
+          Hackathon demo access
+        </h3>
+      </div>
+      <div className="mt-2 min-w-0">
+        <p className="text-[9px] font-medium leading-3 text-slate-500">Organisation ID</p>
+        <span className="mt-0.5 block min-w-0 select-text break-all text-left font-mono text-[10px] font-medium leading-4 text-slate-800">
+          {DEMO_ORGANISATION_ID}
+        </span>
+      </div>
+      <button
+        type="button"
+        className="btn-secondary mt-1.5 min-h-8 w-full px-2 py-1.5 text-[10px]"
+        onClick={onUseOrganisationId}
+      >
+        Use this Organisation ID
+      </button>
+      <p className="mt-1.5 text-center text-[9px] leading-4 text-slate-600">
+        Demo organisation for judges. No real data.
       </p>
     </section>
   );
@@ -161,6 +144,8 @@ export default function Login({
     clearTimeout(credentialsTimeoutRef.current);
     credentialsTimeoutRef.current = setTimeout(() => setCredentialsHighlighted(false), 1200);
   };
+
+  const useDemoOrganisationId = () => setOrganisationId(DEMO_ORGANISATION_ID);
 
   const toggleMode = () => {
     setError('');
@@ -216,11 +201,19 @@ export default function Login({
             </span>
             <span className="text-xl font-semibold tracking-tight text-slate-950">BrandGuard</span>
           </div>
+          {mode === 'register' && (
+            <DemoOrganisationPanel
+              headingId="desktop-registration-demo-access-heading"
+              onUseOrganisationId={useDemoOrganisationId}
+              className="relative mt-6 hidden lg:block"
+            />
+          )}
           <div className="relative flex w-full flex-col gap-4">
             {mode === 'login' && import.meta.env.VITE_SHOW_DEMO_ACCESS !== 'false' && (
               <DemoAccessPanel
                 headingId="desktop-demo-access-heading"
                 onUseCredentials={useDemoCredentials}
+                className="mt-6"
               />
             )}
             <div className="max-w-md">
@@ -248,6 +241,13 @@ export default function Login({
             </span>
             <span className="text-xl font-semibold tracking-tight text-slate-950">BrandGuard</span>
           </div>
+          {mode === 'register' && (
+            <DemoOrganisationPanel
+              headingId="mobile-registration-demo-access-heading"
+              onUseOrganisationId={useDemoOrganisationId}
+              className="mb-5 lg:hidden"
+            />
+          )}
           <p className="login-form-kicker text-xs font-semibold uppercase tracking-[.12em] text-blue-800">Secure workspace access</p>
           <h2 className="login-form-heading mt-2 text-3xl font-semibold tracking-tight text-slate-950">
             {mode === 'login' ? 'Welcome back' : 'Create your account'}

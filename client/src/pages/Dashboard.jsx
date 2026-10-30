@@ -378,6 +378,14 @@ const visible = useMemo(() => {
   const needs = stats?.needsChanges ?? 0;
   const totalContent = stats?.totalContent ?? 0;
   const flagged = stats?.flaggedContent ?? 0;
+  const draft = Math.max(0, totalContent - pending - reviewed - flagged);
+  const approvedPercent = totalContent > 0 ? Math.round((reviewed / totalContent) * 100) : 0;
+  const pipelineSegments = [
+    { label: 'Approved', count: reviewed, color: 'bg-[#047857]' },
+    { label: 'Pending', count: pending, color: 'bg-[#d97706]' },
+    { label: 'Flagged', count: flagged, color: 'bg-[#e11d48]' },
+    { label: 'Draft', count: draft, color: 'bg-[#cbd5e1]' }
+  ];
   const presentation = WORKSPACE_CONFIG[role] || WORKSPACE_CONFIG.Creator;
   const action = roleActions[role] || roleActions.Creator;
   const ActionIcon = action.icon;
@@ -459,11 +467,76 @@ const visible = useMemo(() => {
             </p>
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center lg:min-w-[340px] lg:justify-end">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-5 py-4 sm:min-w-[150px]">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center lg:min-w-[340px] lg:justify-end">
+            <div className="w-full rounded-[20px] border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm md:w-[320px] md:shrink-0">
               <p className="section-kicker">Pipeline health</p>
-              <p className="mt-2 text-sm text-slate-500">Approved</p>
-              <p className="mt-0.5 text-2xl font-semibold tracking-tight text-success-700">{dataUnavailable ? '—' : reviewed}</p>
+              <div className="mt-3 flex items-center gap-4">
+                <svg
+                  className="h-16 w-16 shrink-0"
+                  viewBox="0 0 64 64"
+                  role="img"
+                  aria-label={`${reviewed} of ${totalContent} items approved (${approvedPercent}%)`}
+                >
+                  <circle cx="32" cy="32" r="27" fill="none" stroke="#e2e8f0" strokeWidth="5" />
+                  <circle
+                    cx="32"
+                    cy="32"
+                    r="27"
+                    fill="none"
+                    stroke="#047857"
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                    strokeDasharray={2 * Math.PI * 27}
+                    strokeDashoffset={2 * Math.PI * 27 * (1 - approvedPercent / 100)}
+                    transform="rotate(-90 32 32)"
+                    style={{ transition: 'stroke-dashoffset 600ms ease' }}
+                  />
+                  <text
+                    x="32"
+                    y="36"
+                    textAnchor="middle"
+                    className="fill-slate-900 text-[13px] font-bold"
+                    aria-hidden="true"
+                  >
+                    {approvedPercent}%
+                  </text>
+                </svg>
+                <div className="min-w-0">
+                  <p className="text-sm text-slate-500">Approved</p>
+                  <p className="mt-0.5 text-2xl font-semibold tracking-tight text-slate-900">
+                    {reviewed} <span className="text-lg font-medium text-slate-500">of {totalContent}</span>
+                  </p>
+                </div>
+              </div>
+              <div
+                className="mt-4 flex h-2 overflow-hidden rounded-full bg-slate-200"
+                role="img"
+                aria-label={`${reviewed} of ${totalContent} items approved (${approvedPercent}%)`}
+              >
+                {totalContent > 0 ? pipelineSegments.filter(segment => segment.count > 0).map(segment => (
+                  <span
+                    key={segment.label}
+                    className={segment.color}
+                    style={{ width: `${(segment.count / totalContent) * 100}%` }}
+                    title={`${segment.label}: ${segment.count}`}
+                  />
+                )) : <span className="h-full w-full bg-slate-200" title="No content yet" />}
+              </div>
+              {totalContent > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {pipelineSegments.filter(segment => segment.label !== 'Draft' || segment.count > 0).map(segment => (
+                    <span
+                      key={segment.label}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/80 px-2 py-1 text-[11px] text-slate-600"
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${segment.color}`} aria-hidden="true" />
+                      {segment.label} {segment.count}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 text-xs text-slate-500">Submit a draft to get started</p>
+              )}
             </div>
             <button
               className="btn-primary sm:min-h-[48px]"

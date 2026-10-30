@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import {
@@ -69,8 +70,9 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
   const [imageFilePreview, setImageFilePreview] = useState('');
   const [imagePreviewError, setImagePreviewError] = useState(false);
   const [imageInputError, setImageInputError] = useState('');
-  const [imageScanning, setImageScanning] = useState(false);
   const [imageScanResult, setImageScanResult] = useState('');
+  const [imageScanning, setImageScanning] = useState(false);
+  const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
   const [findings, setFindings] = useState([]);
   const [reviewHistory, setReviewHistory] = useState([]);
   const [status, setStatus] = useState('Draft');
@@ -87,6 +89,24 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
 
+  useEffect(() => {
+    if (!imagePreviewOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    function handlePreviewKeyDown(event) {
+      if (event.key === 'Escape') setImagePreviewOpen(false);
+    }
+
+    window.addEventListener('keydown', handlePreviewKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handlePreviewKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [imagePreviewOpen]);
+
+  // Safe fallback to prevent runtime crashes if imageUrl is null or not a string
   const trimmedImageUrl = typeof imageUrl === 'string' ? imageUrl.trim() : '';
   const imageUrlError = trimmedImageUrl ? getImageUrlError(trimmedImageUrl) : '';
   const hasValidImage = Boolean(imageFile || (trimmedImageUrl && !imageUrlError));
@@ -157,6 +177,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setHasImage(editorState.hasImage);
       setAltText(editorState.altText);
       setImageUrl(typeof data?.imageUrl === 'string' ? data.imageUrl : (editorState?.imageUrl || ''));
+      setImageScanResult('');
       setFindings(editorState.findings);
       setReviewHistory(editorState.reviewHistory);
       setStatus(editorState.status);
@@ -184,6 +205,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
     setImagePreviewError(false);
     setImageInputError('');
     setImageScanResult('');
+    setImagePreviewOpen(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
@@ -194,6 +216,8 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
     setImageFile(null);
     setImageUrl('');
     setImagePreviewError(false);
+    setImageScanResult('');
+    setImagePreviewOpen(false);
 
     if (file.size > MAX_IMAGE_SIZE) {
       setImageInputError('Choose an image no larger than 10 MB.');
@@ -492,6 +516,10 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
       setError('');
       setSuggestedContent('');
 
+      if (hasImage && hasValidImage && !imageScanResult) {
+        await handleScanImage();
+      }
+
       const saved = await handleSave({ navigateAfter: false });
 
       if (!saved) return;
@@ -700,7 +728,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
   const hasRevisions = Boolean(originalContent && originalContent.trim() !== text.trim());
 
   return (
-    <div className="space-y-6">
+    <div className="draft-editor-page space-y-6">
       <button
         type="button"
         onClick={() => navigate(-1)}
@@ -710,7 +738,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         Back
       </button>
 
-      <section className="surface-card space-y-5 p-5 sm:p-7">
+      <section className="draft-editor-form-card surface-card space-y-5 p-5 sm:p-7">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">
@@ -725,7 +753,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
           <StatusBadge status={status} />
         </div>
 
-        <div className="space-y-2">
+        <div className="draft-editor-section draft-editor-title-section space-y-2">
           <label htmlFor="draft-title" className="block text-sm font-medium text-slate-700">
             Content title{' '}
             <span className="text-rose-600" aria-hidden="true">*</span>
@@ -749,7 +777,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
           />
         </div>
 
-        <div className="space-y-2">
+        <div className="draft-editor-section draft-editor-channel-section space-y-2">
           <label htmlFor="draft-channel" className="block text-sm font-medium text-slate-700">
             Channel{' '}
             <span className="text-rose-600" aria-hidden="true">*</span>
@@ -779,7 +807,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
           </select>
         </div>
 
-        <div className="space-y-2">
+        <div className="draft-editor-section draft-editor-content-section space-y-2">
           <div className="flex items-center justify-between">
             <label htmlFor="draft-content" className="block text-sm font-medium text-slate-700">
               Draft content{' '}
@@ -832,10 +860,10 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
           </div>
         )}
 
-        <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <section className="draft-editor-image-section space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-base font-semibold text-slate-900">Image Scanning (Optional)</h2>
+              <h2 className="draft-editor-section-heading text-base font-semibold text-slate-900">Image Scanning (Optional)</h2>
             </div>
             <label className="inline-flex shrink-0 items-center gap-2 text-sm font-medium text-slate-700">
               <input
@@ -859,21 +887,30 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
             <div className="space-y-4">
               <div className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:p-5 md:grid-cols-[12rem_minmax(0,1fr)]">
                 <div
-                  className="flex min-h-44 items-center justify-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-center"
+                  className="draft-image-dropzone flex min-h-44 items-center justify-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-center"
                   aria-label="Image preview"
                 >
                   {imageFilePreview || (trimmedImageUrl && !imageUrlError) ? (
-                    imagePreviewError ? null : (
-                      <img
-                        src={imageFilePreview || trimmedImageUrl}
-                        alt="Selected image preview"
-                        onError={() => {
-                          setImagePreviewError(true);
-                          toast.error('Image preview could not be loaded.');
-                        }}
-                        onLoad={() => setImagePreviewError(false)}
-                        className="max-h-52 w-full rounded-md object-contain"
-                      />
+                    imagePreviewError ? (
+                      null
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setImagePreviewOpen(true)}
+                        className="draft-image-thumbnail cursor-zoom-in"
+                        aria-label="View full-size image"
+                      >
+                        <img
+                          src={imageFilePreview || trimmedImageUrl}
+                          alt="Selected image preview"
+                          onError={() => {
+                            setImagePreviewError(true);
+                            toast.error('Image preview could not be loaded.');
+                          }}
+                          onLoad={() => setImagePreviewError(false)}
+                          className="max-h-52 w-full rounded-md object-contain"
+                        />
+                      </button>
                     )
                   ) : (
                     <div className="text-slate-700">
@@ -898,6 +935,8 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
                         setImageUrl(event.target.value);
                         setImagePreviewError(false);
                         setImageInputError('');
+                        setImageScanResult('');
+                        setImagePreviewOpen(false);
                         if (fileInputRef.current) fileInputRef.current.value = '';
                       }}
                       disabled={readOnly || imageScanning}
@@ -930,12 +969,12 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
                     tabIndex={-1}
                     aria-hidden="true"
                   />
-                  <div className="flex flex-wrap gap-2">
+                  <div className="draft-image-actions flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={readOnly || imageScanning}
-                      className="btn-secondary inline-flex items-center gap-2"
+                      className="draft-image-button draft-image-button--replace btn-secondary inline-flex items-center gap-2"
                     >
                       <ImagePlus className="text-blue-700" size={16} aria-hidden="true" />
                       {imageFile || trimmedImageUrl ? 'Replace image' : 'Upload image'}
@@ -945,7 +984,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
                         type="button"
                         onClick={clearImageSelection}
                         disabled={readOnly || imageScanning}
-                        className="btn-secondary inline-flex items-center gap-2"
+                        className="draft-image-button draft-image-button--remove btn-secondary inline-flex items-center gap-2"
                       >
                         <X size={16} aria-hidden="true" />
                         Remove image
@@ -955,14 +994,14 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
                       type="button"
                       onClick={handleScanImage}
                       disabled={readOnly || !hasValidImage || imageScanning}
-                      className="btn-primary inline-flex items-center gap-2 disabled:!cursor-not-allowed disabled:!bg-slate-100 disabled:!text-slate-400 disabled:!opacity-100"
+                      className="draft-image-button draft-image-button--scan btn-secondary inline-flex items-center gap-2"
                     >
                       {imageScanning ? (
-                        <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                        <LoaderCircle className="draft-image-scan-spinner animate-spin" size={16} aria-hidden="true" />
                       ) : (
                         <ScanLine size={16} aria-hidden="true" />
                       )}
-                      {imageScanning ? 'Scanning image…' : 'Scan Image'}
+                      {imageScanning ? 'Scanning image…' : 'Scan image'}
                     </button>
                   </div>
                   <p id="draft-image-help" className="text-xs leading-5 text-slate-500">
@@ -971,7 +1010,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
                 </div>
               </div>
 
-              <label htmlFor="draft-alt-text" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="draft-alt-text" className="draft-image-alt-label block text-sm font-medium text-slate-700">
                 Image alt-text
                 <input
                   id="draft-alt-text"
@@ -989,11 +1028,85 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
                   className="input mt-1.5 w-full"
                   placeholder="Describe the meaningful visual content"
                 />
-                <span className="mt-1 block text-xs font-normal text-slate-500">
+                <span className="draft-image-alt-help mt-1 block text-xs font-normal text-slate-500">
                   The scan checks that alt-text is descriptive and 5–125 characters long.
                 </span>
               </label>
             </div>
+          )}
+
+          {imagePreviewOpen && !imagePreviewError && (imageFilePreview || (trimmedImageUrl && !imageUrlError)) && (
+            createPortal(
+              <div
+                className="draft-image-preview-backdrop"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Image preview"
+                onClick={() => setImagePreviewOpen(false)}
+                style={{
+                  position: 'fixed',
+                  inset: 0,
+                  zIndex: 9999,
+                  background: 'rgba(15, 23, 42, 0.75)',
+                  backdropFilter: 'blur(4px)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 24,
+                }}
+              >
+                <div
+                  className="draft-image-preview-card"
+                  onClick={event => event.stopPropagation()}
+                  style={{
+                    position: 'relative',
+                    background: '#fff',
+                    borderRadius: 16,
+                    padding: 12,
+                    maxWidth: 'min(900px, 92vw)',
+                    maxHeight: '90vh',
+                    width: 'auto',
+                    boxShadow: '0 20px 60px rgba(0,0,0,.35)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="draft-image-preview-close"
+                    onClick={() => setImagePreviewOpen(false)}
+                    aria-label="Close preview"
+                    style={{
+                      position: 'absolute',
+                      top: 8,
+                      right: 8,
+                      width: 36,
+                      height: 36,
+                      borderRadius: 9999,
+                      background: '#fff',
+                      boxShadow: '0 1px 4px rgba(0,0,0,.2)',
+                    }}
+                  >
+                    <X size={20} aria-hidden="true" />
+                  </button>
+                  <img
+                    className="draft-image-preview-image"
+                    src={imageFilePreview || trimmedImageUrl}
+                    alt="Full-size image preview"
+                    style={{
+                      width: 'auto',
+                      height: 'auto',
+                      maxWidth: '100%',
+                      maxHeight: 'calc(90vh - 24px)',
+                      objectFit: 'contain',
+                      display: 'block',
+                      borderRadius: 10,
+                      margin: '0 auto',
+                    }}
+                  />
+                </div>
+              </div>,
+              document.body
+            )
           )}
         </section>
 
@@ -1040,7 +1153,7 @@ export default function DraftEditor({ actualRole, workspaceRole = actualRole, pr
         )}
 
         {!readOnly && (
-          <div className="flex flex-wrap gap-3">
+          <div className="draft-editor-action-bar flex flex-wrap gap-3">
             <button
               type="button"
               onClick={handleSave}
